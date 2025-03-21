@@ -113,3 +113,5 @@ STATICFILES_STORAGE = 'whitenoise.storage.CompressedStaticFilesStorage'
 # Upewnij się, że katalogi istnieją
 os.makedirs(STATIC_ROOT, exist_ok=True)
 os.makedirs(os.path.join(BASE_DIR, 'frontend/build/static'), exist_ok=True)
+
+LOGIN_URL = '/'

@@ -1,8 +1,13 @@
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
+from django.http import JsonResponse
+from django.views.decorators.csrf import ensure_csrf_cookie
 from rest_framework.response import Response
-from django.shortcuts import render
+from django.shortcuts import render, redirect
+from django.contrib.auth.decorators import login_required
+from django.contrib.auth import authenticate, login
 from django.contrib.auth.models import User
+import json
 from .models import UserProfile, Project
 from .serializers import (
     UserSerializer, UserProfileSerializer, ProjectSerializer
@@ -146,6 +151,55 @@ class ProjectViewSet(viewsets.ModelViewSet):
             return Project.objects.filter(client=user)
 
 
+@require_POST
+def login_api(request):
+    """API do logowania"""
+    if request.content_type == 'application/json':
+        data = json.loads(request.body)
+        username = data.get('username')
+        password = data.get('password')
+    else:
+        username = request.POST.get('username')
+        password = request.POST.get('password')
+
+    if not username or not password:
+        return JsonResponse({
+            'success': False,
+            'message': 'Proszę podać nazwę użytkownika i hasło'
+        })
+
+    user = authenticate(request, username=username, password=password)
+
+    if user is not None:
+        login(request, user)
+        if request.content_type == 'application/json':
+            return JsonResponse({
+                'success': True,
+                'message': 'Zalogowano pomyślnie'
+            })
+        else:
+            return redirect('dashboard')  # Przekierowanie dla tradycyjnego formularza
+    else:
+        if request.content_type == 'application/json':
+            return JsonResponse({
+                'success': False,
+                'message': 'Nieprawidłowa nazwa użytkownika lub hasło'
+            }, status=401)
+        else:
+            return render(request, 'login.html', {'error_message': 'Nieprawidłowa nazwa użytkownika lub hasło'})
+
+def login_view(request):
+    """Widok renderujący stronę logowania"""
+    # Jeśli użytkownik jest już zalogowany, przekieruj do dashboardu
+    if request.user.is_authenticated:
+        return redirect('dashboard')
+
+    if request.method == 'POST':
+        return login_api(request)
+
+    return render(request, 'login.html')
+
+@login_required
 def dashboard_view(request):
-    """Widok renderujący dashboard React"""
+    """Widok renderujący dashboard React (wymaga logowania)"""
     return render(request, 'dashboard.html')
