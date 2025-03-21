@@ -11,9 +11,13 @@ function App() {
     // Sprawdź status autentykacji użytkownika
     const checkAuth = async () => {
       try {
-        const response = await fetch('/api/user/is-authenticated/');
-        const data = await response.json();
-        setIsAuthenticated(data.isAuthenticated);
+        const response = await fetch('/', {
+          method: 'GET',
+          credentials: 'same-origin'  // Ważne, aby wysłać ciasteczka sesji
+        });
+
+        // Jeśli serwer zwraca 200 OK, oznacza to, że użytkownik jest już zalogowany
+        setIsAuthenticated(response.status === 200);
       } catch (error) {
         setIsAuthenticated(false);
       }

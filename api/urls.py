@@ -1,17 +1,14 @@
-from django.contrib import admin
 from django.urls import path, include
-from django.conf import settings
-from django.conf.urls.static import static
-from django.contrib.auth.decorators import login_required  # Dodaj ten import
-from api.views import dashboard_view, login_view
+from rest_framework.routers import DefaultRouter
+from .views import UserViewSet, UserProfileViewSet, ProjectViewSet
+
+# Utwórz router dla widoków ViewSet
+router = DefaultRouter()
+router.register(r'users', UserViewSet)
+router.register(r'profiles', UserProfileViewSet)
+router.register(r'projects', ProjectViewSet)
 
 urlpatterns = [
-    path('admin/', admin.site.urls),
-    path('api/', include('api.urls')),
-    path('dashboard/', dashboard_view, name='dashboard'),  # Jeśli używasz tu login_required, popraw to
-    path('', login_view, name='login'),
-    path('api-auth/', include('rest_framework.urls')),
+    # Dołącz ścieżki routera
+    path('', include(router.urls)),
 ]
-
-if settings.DEBUG:
-    urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)

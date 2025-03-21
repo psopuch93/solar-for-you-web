@@ -23,57 +23,31 @@
       document.body.appendChild(script);
     }
 
-    // Wypróbuj ładowanie z asset-manifest.json
+    // Ładuj pliki z katalogu static
     fetch('/static/asset-manifest.json')
       .then(response => response.json())
       .then(manifest => {
-        console.log("Manifest załadowany:", manifest);
         // Ładuj główny plik CSS
         if (manifest.files && manifest.files['main.css']) {
           loadCSS(manifest.files['main.css']);
+        } else {
+          // Fallback - spróbuj załadować wszystkie możliwe pliki CSS
+          loadCSS('/static/css/main.css');
         }
 
         // Ładuj główny plik JS
         if (manifest.files && manifest.files['main.js']) {
           loadScript(manifest.files['main.js']);
+        } else {
+          // Fallback - spróbuj załadować wszystkie możliwe pliki JS
+          loadScript('/static/js/main.js');
         }
       })
       .catch(error => {
-        console.error('Błąd ładowania manifestu:', error);
-
-        // Fallback - szukaj plików JS w katalogu static/js
-        fetch('/static/js/')
-          .then(response => response.text())
-          .then(text => {
-            const matches = text.match(/main\.[a-z0-9]+\.js/g);
-            if (matches && matches.length) {
-              loadScript('/static/js/' + matches[0]);
-            } else {
-              // Ostateczny fallback - hardcoded nazwa pliku
-              loadScript('/static/js/main.8a18b830.js');
-            }
-          })
-          .catch(() => {
-            // Ostateczny fallback - hardcoded nazwa pliku
-            loadScript('/static/js/main.8a18b830.js');
-          });
-
-        // Fallback dla CSS
-        fetch('/static/css/')
-          .then(response => response.text())
-          .then(text => {
-            const matches = text.match(/main\.[a-z0-9]+\.css/g);
-            if (matches && matches.length) {
-              loadCSS('/static/css/' + matches[0]);
-            } else {
-              // Ostateczny fallback - hardcoded nazwa pliku
-              loadCSS('/static/css/main.2a50f08b.css');
-            }
-          })
-          .catch(() => {
-            // Ostateczny fallback - hardcoded nazwa pliku
-            loadCSS('/static/css/main.2a50f08b.css');
-          });
+        console.error('Nie udało się załadować manifestu:', error);
+        // Fallback - spróbuj załadować wszystkie możliwe pliki
+        loadCSS('/static/css/main.css');
+        loadScript('/static/js/main.js');
       });
   </script>
 </body>

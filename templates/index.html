@@ -3,55 +3,52 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Dashboard - Solar For You</title>
+  <title>Solar For You - Logowanie</title>
 </head>
 <body>
   <div id="root"></div>
   <script>
-    // Ten skrypt sprawdza dostępność plików React i ładuje je dynamicznie
-    document.addEventListener('DOMContentLoaded', function() {
-      // Funkcja do ładowania CSS
-      function loadCSS(href) {
-        var link = document.createElement('link');
-        link.rel = 'stylesheet';
-        link.href = href;
-        document.head.appendChild(link);
-      }
+    // Funkcja do ładowania CSS
+    function loadCSS(href) {
+      var link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = href;
+      document.head.appendChild(link);
+    }
 
-      // Funkcja do ładowania JS
-      function loadScript(src) {
-        var script = document.createElement('script');
-        script.src = src;
-        document.body.appendChild(script);
-      }
+    // Funkcja do ładowania JS
+    function loadScript(src) {
+      var script = document.createElement('script');
+      script.src = src;
+      document.body.appendChild(script);
+    }
 
-      // Ładuj pliki z katalogu static
-      fetch('/static/asset-manifest.json')
-        .then(response => response.json())
-        .then(manifest => {
-          // Ładuj główny plik CSS
-          if (manifest.files && manifest.files['main.css']) {
-            loadCSS(manifest.files['main.css']);
-          } else {
-            // Fallback - spróbuj załadować wszystkie możliwe pliki CSS
-            loadCSS('/static/css/main.css');
-          }
-
-          // Ładuj główny plik JS
-          if (manifest.files && manifest.files['main.js']) {
-            loadScript(manifest.files['main.js']);
-          } else {
-            // Fallback - spróbuj załadować wszystkie możliwe pliki JS
-            loadScript('/static/js/main.js');
-          }
-        })
-        .catch(error => {
-          console.error('Nie udało się załadować manifestu:', error);
-          // Fallback - spróbuj załadować wszystkie możliwe pliki
+    // Ładuj pliki z katalogu static
+    fetch('/static/asset-manifest.json')
+      .then(response => response.json())
+      .then(manifest => {
+        // Ładuj główny plik CSS
+        if (manifest.files && manifest.files['main.css']) {
+          loadCSS(manifest.files['main.css']);
+        } else {
+          // Fallback - spróbuj załadować wszystkie możliwe pliki CSS
           loadCSS('/static/css/main.css');
+        }
+
+        // Ładuj główny plik JS
+        if (manifest.files && manifest.files['main.js']) {
+          loadScript(manifest.files['main.js']);
+        } else {
+          // Fallback - spróbuj załadować wszystkie możliwe pliki JS
           loadScript('/static/js/main.js');
-        });
-    });
+        }
+      })
+      .catch(error => {
+        console.error('Nie udało się załadować manifestu:', error);
+        // Fallback - spróbuj załadować wszystkie możliwe pliki
+        loadCSS('/static/css/main.css');
+        loadScript('/static/js/main.js');
+      });
   </script>
 </body>
 </html>

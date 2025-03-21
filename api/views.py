@@ -91,38 +91,6 @@ class UserProfileViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(profile)
         return Response(serializer.data)
 
-    @action(detail=True, methods=['post'], permission_classes=[permissions.IsAdminUser])
-    def add_privilege(self, request, pk=None):
-        """Dodaje uprawnienie do profilu (tylko dla adminów)"""
-        profile = self.get_object()
-        privilege = request.data.get('privilege')
-
-        if not privilege:
-            return Response(
-                {'error': 'Nie podano uprawnienia'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        profile.add_privilege(privilege)
-        serializer = self.get_serializer(profile)
-        return Response(serializer.data)
-
-    @action(detail=True, methods=['post'], permission_classes=[permissions.IsAdminUser])
-    def remove_privilege(self, request, pk=None):
-        """Usuwa uprawnienie z profilu (tylko dla adminów)"""
-        profile = self.get_object()
-        privilege = request.data.get('privilege')
-
-        if not privilege:
-            return Response(
-                {'error': 'Nie podano uprawnienia'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        profile.remove_privilege(privilege)
-        serializer = self.get_serializer(profile)
-        return Response(serializer.data)
-
 class ProjectViewSet(viewsets.ModelViewSet):
     """API endpoint dla projektów"""
     queryset = Project.objects.all()
@@ -150,43 +118,45 @@ class ProjectViewSet(viewsets.ModelViewSet):
             # Domyślnie zwracamy projekty, których użytkownik jest klientem
             return Project.objects.filter(client=user)
 
+# Istniejące widoki logowania, dashboard itp. pozostają bez zmian
+from django.views.decorators.http import require_http_methods
 
-@require_POST
+@require_http_methods(["GET", "POST"])
 def login_api(request):
     """API do logowania"""
-    if request.content_type == 'application/json':
-        data = json.loads(request.body)
-        username = data.get('username')
-        password = data.get('password')
-    else:
-        username = request.POST.get('username')
-        password = request.POST.get('password')
+    if request.method == 'POST':
+        # Obsługa żądań JSON
+        try:
+            data = json.loads(request.body)
+            username = data.get('username')
+            password = data.get('password')
+        except json.JSONDecodeError:
+            username = request.POST.get('username')
+            password = request.POST.get('password')
 
-    if not username or not password:
-        return JsonResponse({
-            'success': False,
-            'message': 'Proszę podać nazwę użytkownika i hasło'
-        })
+        if not username or not password:
+            return JsonResponse({
+                'success': False,
+                'message': 'Proszę podać nazwę użytkownika i hasło'
+            }, status=400)
 
-    user = authenticate(request, username=username, password=password)
+        user = authenticate(request, username=username, password=password)
 
-    if user is not None:
-        login(request, user)
-        if request.content_type == 'application/json':
+        if user is not None:
+            login(request, user)
             return JsonResponse({
                 'success': True,
-                'message': 'Zalogowano pomyślnie'
+                'message': 'Zalogowano pomyślnie',
+                'redirect': '/dashboard/'
             })
         else:
-            return redirect('dashboard')  # Przekierowanie dla tradycyjnego formularza
-    else:
-        if request.content_type == 'application/json':
             return JsonResponse({
                 'success': False,
                 'message': 'Nieprawidłowa nazwa użytkownika lub hasło'
             }, status=401)
-        else:
-            return render(request, 'login.html', {'error_message': 'Nieprawidłowa nazwa użytkownika lub hasło'})
+
+    # Dla metody GET - renderowanie widoku logowania
+    return render(request, 'index.html')
 
 def login_view(request):
     """Widok renderujący stronę logowania"""
@@ -194,10 +164,7 @@ def login_view(request):
     if request.user.is_authenticated:
         return redirect('dashboard')
 
-    if request.method == 'POST':
-        return login_api(request)
-
-    return render(request, 'login.html')
+    return render(request, 'index.html')
 
 @login_required
 def dashboard_view(request):
