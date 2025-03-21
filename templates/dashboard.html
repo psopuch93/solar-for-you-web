@@ -1,11 +1,80 @@
 <!DOCTYPE html>
 <html lang="pl">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard - Solar For You</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard - Solar For You</title>
 </head>
 <body>
-    <div id="root"></div>
+  <div id="root"></div>
+  <script>
+    // Funkcja do ładowania CSS
+    function loadCSS(href) {
+      var link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = href;
+      document.head.appendChild(link);
+    }
+
+    // Funkcja do ładowania JS
+    function loadScript(src) {
+      var script = document.createElement('script');
+      script.src = src;
+      document.body.appendChild(script);
+    }
+
+    // Wypróbuj ładowanie z asset-manifest.json
+    fetch('/static/asset-manifest.json')
+      .then(response => response.json())
+      .then(manifest => {
+        console.log("Manifest załadowany:", manifest);
+        // Ładuj główny plik CSS
+        if (manifest.files && manifest.files['main.css']) {
+          loadCSS(manifest.files['main.css']);
+        }
+
+        // Ładuj główny plik JS
+        if (manifest.files && manifest.files['main.js']) {
+          loadScript(manifest.files['main.js']);
+        }
+      })
+      .catch(error => {
+        console.error('Błąd ładowania manifestu:', error);
+
+        // Fallback - szukaj plików JS w katalogu static/js
+        fetch('/static/js/')
+          .then(response => response.text())
+          .then(text => {
+            const matches = text.match(/main\.[a-z0-9]+\.js/g);
+            if (matches && matches.length) {
+              loadScript('/static/js/' + matches[0]);
+            } else {
+              // Ostateczny fallback - hardcoded nazwa pliku
+              loadScript('/static/js/main.8a18b830.js');
+            }
+          })
+          .catch(() => {
+            // Ostateczny fallback - hardcoded nazwa pliku
+            loadScript('/static/js/main.8a18b830.js');
+          });
+
+        // Fallback dla CSS
+        fetch('/static/css/')
+          .then(response => response.text())
+          .then(text => {
+            const matches = text.match(/main\.[a-z0-9]+\.css/g);
+            if (matches && matches.length) {
+              loadCSS('/static/css/' + matches[0]);
+            } else {
+              // Ostateczny fallback - hardcoded nazwa pliku
+              loadCSS('/static/css/main.2a50f08b.css');
+            }
+          })
+          .catch(() => {
+            // Ostateczny fallback - hardcoded nazwa pliku
+            loadCSS('/static/css/main.2a50f08b.css');
+          });
+      });
+  </script>
 </body>
 </html>

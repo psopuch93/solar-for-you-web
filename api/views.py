@@ -147,4 +147,5 @@ class ProjectViewSet(viewsets.ModelViewSet):
 
 
 def dashboard_view(request):
+    """Widok renderujący dashboard React"""
     return render(request, 'dashboard.html')

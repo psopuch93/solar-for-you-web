@@ -3,13 +3,13 @@ from django.urls import path, include, re_path
 from django.views.generic import TemplateView
 from django.conf import settings
 from django.conf.urls.static import static
-from api.views import dashboard_view  # Dodaj tę linię
+from api.views import dashboard_view
 
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/', include('api.urls')),
-    path('dashboard/', dashboard_view, name='dashboard'),  # Zmień na dashboard_view
-    path('api-auth/', include('rest_framework.urls')),  # Autentykacja DRF
+    path('dashboard/', dashboard_view, name='dashboard'),
+    path('api-auth/', include('rest_framework.urls')),
 ]
 
 # Dodajemy obsługę plików statycznych i mediów w trybie debug

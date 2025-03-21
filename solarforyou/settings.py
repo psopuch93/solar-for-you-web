@@ -48,6 +48,13 @@ INSTALLED_APPS = [
     'corsheaders',
 ]
 
+WEBPACK_LOADER = {
+    'DEFAULT': {
+        'BUNDLE_DIR_NAME': 'static/',
+        'STATS_FILE': os.path.join(BASE_DIR, 'frontend', 'build', 'webpack-stats.json'),
+    }
+}
+
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
@@ -60,6 +67,8 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
+ROOT_URLCONF = 'solarforyou.urls'
+
 # Konfiguracja CORS
 CORS_ALLOWED_ORIGINS = [
     "https://www.solarforyou.cloud",
@@ -69,23 +78,14 @@ CORS_ALLOWED_ORIGINS = [
 ]
 CORS_ALLOW_ALL_ORIGINS = False
 
-REST_FRAMEWORK = {
-    'DEFAULT_PERMISSION_CLASSES': [
-        'rest_framework.permissions.IsAuthenticatedOrReadOnly',
-    ],
-    'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework.authentication.SessionAuthentication',
-        'rest_framework.authentication.BasicAuthentication',
-    ],
-}
-
-ROOT_URLCONF = 'solarforyou.urls'
-
+# Konfiguracja szablonów
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [os.path.join(BASE_DIR, 'templates'),
-                FRONTEND_DIR / "build"],
+        'DIRS': [
+            os.path.join(BASE_DIR, 'templates'),
+            os.path.join(BASE_DIR, 'frontend', 'build'),
+        ],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -98,64 +98,17 @@ TEMPLATES = [
     },
 ]
 
-WSGI_APPLICATION = 'solarforyou.wsgi.application'
-
-# Database configuration
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.mysql',
-        'NAME': os.getenv('DB_NAME'),
-        'USER': os.getenv('DB_USER'),
-        'PASSWORD': os.getenv('DB_PASSWORD'),
-        'HOST': os.getenv('DB_HOST', 'foryougroup.mysql.eu.pythonanywhere-services.com'),
-        'PORT': os.getenv('DB_PORT', '3306'),
-    }
-}
-
-# Reszta konfiguracji pozostaje bez zmian
-AUTH_PASSWORD_VALIDATORS = [
-    {
-        'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
-    },
-]
-
-LANGUAGE_CODE = 'pl'
-TIME_ZONE = 'Europe/Warsaw'
-USE_I18N = True
-USE_TZ = True
-
-DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
-
-# Static and media files settings for PythonAnywhere
-MEDIA_ROOT = '/home/foryougroup/solarforyou/media'
-MEDIA_URL = '/media/'
-
 # Konfiguracja plików statycznych
 STATIC_URL = '/static/'
-STATIC_ROOT = '/home/foryougroup/solarforyou/static'
+STATIC_ROOT = os.path.join(BASE_DIR, 'static')
 
 # Katalogi z plikami statycznymi
 STATICFILES_DIRS = [
-    FRONTEND_DIR / "build/static",
-]
-
-# Dodatkowe konfiguracje statycznych plików
-STATICFILES_FINDERS = [
-    'django.contrib.staticfiles.finders.FileSystemFinder',
-    'django.contrib.staticfiles.finders.AppDirectoriesFinder',
+    os.path.join(BASE_DIR, 'frontend', 'build', 'static'),
 ]
 
 # Storage dla plików statycznych
-STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedStaticFilesStorage'
 
 # Upewnij się, że katalogi istnieją
 os.makedirs(STATIC_ROOT, exist_ok=True)
