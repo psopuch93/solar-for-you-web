@@ -1,5 +1,5 @@
 from rest_framework import viewsets, permissions, status
-from rest_framework.decorators import action
+from rest_framework.decorators import action, api_view, permission_classes
 from django.http import JsonResponse
 from django.views.decorators.csrf import ensure_csrf_cookie
 from rest_framework.response import Response
@@ -7,10 +7,12 @@ from django.shortcuts import render, redirect
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth import authenticate, login
 from django.contrib.auth.models import User
+from django.db.models import Q
 import json
-from .models import UserProfile, Project
+from .models import UserProfile, Project, Client, ProjectTag
 from .serializers import (
-    UserSerializer, UserProfileSerializer, ProjectSerializer
+    UserSerializer, UserProfileSerializer, ProjectSerializer,
+    ClientSerializer, ProjectTagSerializer
 )
 
 class IsAdminOrOwner(permissions.BasePermission):
@@ -118,6 +120,38 @@ class ProjectViewSet(viewsets.ModelViewSet):
             # Domyślnie zwracamy projekty, których użytkownik jest klientem
             return Project.objects.filter(client=user)
 
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user, updated_by=self.request.user)
+
+    def perform_update(self, serializer):
+        serializer.save(updated_by=self.request.user)
+
+class ClientViewSet(viewsets.ModelViewSet):
+    """API endpoint dla klientów"""
+    queryset = Client.objects.all()
+    serializer_class = ClientSerializer
+    permission_classes = [permissions.IsAuthenticated, HasModulePrivilege]
+    required_privilege = 'manage_clients'  # Uprawnienie do zarządzania klientami
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user, updated_by=self.request.user)
+
+    def perform_update(self, serializer):
+        serializer.save(updated_by=self.request.user)
+
+class ProjectTagViewSet(viewsets.ModelViewSet):
+    """API endpoint dla tagów projektów"""
+    queryset = ProjectTag.objects.all()
+    serializer_class = ProjectTagSerializer
+    permission_classes = [permissions.IsAuthenticated, HasModulePrivilege]
+    required_privilege = 'manage_project_tags'  # Uprawnienie do zarządzania tagami
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user, updated_by=self.request.user)
+
+    def perform_update(self, serializer):
+        serializer.save(updated_by=self.request.user)
+
 # Istniejące widoki logowania, dashboard itp. pozostają bez zmian
 from django.views.decorators.http import require_http_methods
 
@@ -170,3 +204,40 @@ def login_view(request):
 def dashboard_view(request):
     """Widok renderujący dashboard React (wymaga logowania)"""
     return render(request, 'dashboard.html')
+
+@require_http_methods(["POST"])
+def logout_api(request):
+    """API do wylogowania"""
+    from django.contrib.auth import logout
+    logout(request)
+    return JsonResponse({
+        'success': True,
+        'message': 'Wylogowano pomyślnie'
+    })
+
+# Nowy endpoint do sprawdzania unikalności nazwy projektu
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def check_project_name(request):
+    """Sprawdza czy nazwa projektu jest unikalna"""
+    name = request.GET.get('name')
+    project_id = request.GET.get('id')  # Opcjonalnie, dla edycji
+
+    if not name:
+        return Response({'valid': False, 'message': 'Brak nazwy projektu'}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Sprawdzamy czy nazwa ma minimalną długość
+    if len(name) < 3:
+        return Response({'valid': False, 'message': 'Nazwa projektu musi mieć co najmniej 3 znaki'})
+
+    # Dla przypadku edycji - wykluczamy bieżący projekt
+    query = Q(name=name)
+    if project_id:
+        query &= ~Q(id=project_id)
+
+    exists = Project.objects.filter(query).exists()
+
+    if exists:
+        return Response({'valid': False, 'message': 'Projekt o tej nazwie już istnieje'})
+    else:
+        return Response({'valid': True, 'message': 'Nazwa dostępna'})

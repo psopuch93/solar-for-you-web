@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django import forms
-from .models import UserProfile, Project
+from .models import UserProfile, Project, Client, ProjectTag
 
 class UserProfileAdminForm(forms.ModelForm):
     """Formularz do zarządzania uprawnieniami w adminie"""
@@ -64,11 +64,57 @@ class UserProfileAdmin(admin.ModelAdmin):
         return ", ".join(privileges)
     get_privileges_display.short_description = "Uprawnienia"
 
+@admin.register(Client)
+class ClientAdmin(admin.ModelAdmin):
+    list_display = ('name', 'created_at', 'created_by')
+    search_fields = ('name',)
+    readonly_fields = ('created_at', 'updated_at')
+
+    def save_model(self, request, obj, form, change):
+        if not change:  # Jeśli to nowy obiekt
+            obj.created_by = request.user
+        obj.updated_by = request.user
+        super().save_model(request, obj, form, change)
+
+@admin.register(ProjectTag)
+class ProjectTagAdmin(admin.ModelAdmin):
+    list_display = ('serial', 'created_at', 'created_by')
+    search_fields = ('serial',)
+    readonly_fields = ('created_at', 'updated_at')
+
+    def save_model(self, request, obj, form, change):
+        if not change:  # Jeśli to nowy obiekt
+            obj.created_by = request.user
+        obj.updated_by = request.user
+        super().save_model(request, obj, form, change)
+
 @admin.register(Project)
 class ProjectAdmin(admin.ModelAdmin):
-    list_display = ('name', 'client', 'localization', 'status', 'start_date', 'end_date', 'budget', 'created_at')
-    list_filter = ('status', 'start_date', 'end_date')
-    search_fields = ('name', 'client__username', 'client__first_name', 'client__last_name', 'localization', 'description')
+    list_display = ('name', 'client', 'city', 'status', 'start_date', 'end_date', 'budget', 'created_at')
+    list_filter = ('status', 'start_date', 'end_date', 'country', 'city')
+    search_fields = ('name', 'client__name', 'localization', 'description', 'country', 'city', 'street')
+    # Usuń created_by i updated_by z readonly_fields
     readonly_fields = ('created_at', 'updated_at')
     list_editable = ('status',)
-    list_per_page = 25
+
+    # Usuń created_by i updated_by z fieldsets, jeśli tam są
+    fieldsets = (
+        ('Podstawowe informacje', {
+            'fields': ('name', 'client', 'description', 'status', 'budget', 'project_tag')
+        }),
+        ('Daty', {
+            'fields': ('start_date', 'end_date')
+        }),
+        ('Lokalizacja', {
+            'fields': ('localization', 'country', 'city', 'street', 'post_code', 'latitude', 'longitude')
+        }),
+    )
+
+    # Upewnij się, że nie ma konfliktu między exclude i polami w fieldsets
+    exclude = ('created_by', 'updated_by')
+
+    def save_model(self, request, obj, form, change):
+        if not change:  # Jeśli to nowy obiekt (nie edycja)
+            obj.created_by = request.user
+        obj.updated_by = request.user
+        super().save_model(request, obj, form, change)

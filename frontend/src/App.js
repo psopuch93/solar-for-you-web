@@ -1,3 +1,4 @@
+// frontend/src/App.js
 import React, { useEffect, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Dashboard from './pages/Dashboard';
@@ -6,20 +7,27 @@ import './App.css';
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     // Sprawdź status autentykacji użytkownika
     const checkAuth = async () => {
       try {
-        const response = await fetch('/', {
+        const response = await fetch('/api/users/me/', {
           method: 'GET',
-          credentials: 'same-origin'  // Ważne, aby wysłać ciasteczka sesji
+          credentials: 'same-origin',
+          headers: {
+            'Content-Type': 'application/json',
+          }
         });
 
-        // Jeśli serwer zwraca 200 OK, oznacza to, że użytkownik jest już zalogowany
+        // Jeśli status 200 to użytkownik jest zalogowany
         setIsAuthenticated(response.status === 200);
       } catch (error) {
+        console.error('Błąd sprawdzania autentykacji:', error);
         setIsAuthenticated(false);
+      } finally {
+        setIsLoading(false);
       }
     };
 
@@ -27,8 +35,10 @@ function App() {
   }, []);
 
   // Pokaż ładowanie dopóki nie sprawdzimy statusu autentykacji
-  if (isAuthenticated === null) {
-    return <div className="loading">Ładowanie...</div>;
+  if (isLoading) {
+    return <div className="flex items-center justify-center h-screen">
+      <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-orange-500"></div>
+    </div>;
   }
 
   return (
@@ -36,11 +46,11 @@ function App() {
       <Routes>
         <Route
           path="/"
-          element={isAuthenticated ? <Navigate to="/dashboard" /> : <LoginPage />}
+          element={isAuthenticated ? <Navigate to="/dashboard" /> : <LoginPage setIsAuthenticated={setIsAuthenticated} />}
         />
         <Route
           path="/dashboard/*"
-          element={isAuthenticated ? <Dashboard /> : <Navigate to="/" />}
+          element={isAuthenticated ? <Dashboard setIsAuthenticated={setIsAuthenticated} /> : <Navigate to="/" />}
         />
       </Routes>
     </Router>
