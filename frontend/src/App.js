@@ -3,6 +3,8 @@ import React, { useEffect, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Dashboard from './pages/Dashboard';
 import LoginPage from './pages/LoginPage';
+import ClientsPage from './pages/ClientsPage';
+import ClientForm from './components/ClientForm';
 import './App.css';
 
 function App() {
@@ -51,6 +53,18 @@ function App() {
         <Route
           path="/dashboard/*"
           element={isAuthenticated ? <Dashboard setIsAuthenticated={setIsAuthenticated} /> : <Navigate to="/" />}
+        />
+        <Route
+          path="/clients"
+          element={isAuthenticated ? <ClientsPage /> : <Navigate to="/" />}
+        />
+        <Route
+          path="/clients/new"
+          element={isAuthenticated ? <ClientForm /> : <Navigate to="/" />}
+        />
+        <Route
+          path="/clients/:id"
+          element={isAuthenticated ? <ClientForm /> : <Navigate to="/" />}
         />
       </Routes>
     </Router>

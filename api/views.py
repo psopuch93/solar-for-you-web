@@ -130,14 +130,27 @@ class ClientViewSet(viewsets.ModelViewSet):
     """API endpoint dla klientów"""
     queryset = Client.objects.all()
     serializer_class = ClientSerializer
-    permission_classes = [permissions.IsAuthenticated, HasModulePrivilege]
-    required_privilege = 'manage_clients'  # Uprawnienie do zarządzania klientami
+    permission_classes = [IsAdminOrOwner, HasModulePrivilege]
+    required_privilege = 'manage_clients'  # Nowe uprawnienie
 
     def perform_create(self, serializer):
-        serializer.save(created_by=self.request.user, updated_by=self.request.user)
+        """Automatycznie ustaw użytkownika tworzącego klienta"""
+        serializer.save(created_by=self.request.user)
 
     def perform_update(self, serializer):
+        """Automatycznie ustaw użytkownika aktualizującego klienta"""
         serializer.save(updated_by=self.request.user)
+
+    def get_queryset(self):
+        """Filtrowanie klientów"""
+        user = self.request.user
+
+        # Admin widzi wszystkich klientów
+        if user.is_staff:
+            return Client.objects.all()
+
+        # Domyślnie zwracamy pustą listę dla zwykłego użytkownika
+        return Client.objects.none()
 
 class ProjectTagViewSet(viewsets.ModelViewSet):
     """API endpoint dla tagów projektów"""

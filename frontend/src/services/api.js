@@ -45,4 +45,24 @@ export const deleteProject = (id) => {
   return API.delete(`/projects/${id}/`);
 };
 
+export const getClients = () => {
+  return API.get('/clients/');
+};
+
+export const getClientById = (id) => {
+  return API.get(`/clients/${id}/`);
+};
+
+export const createClient = (data) => {
+  return API.post('/clients/', data);
+};
+
+export const updateClient = (id, data) => {
+  return API.patch(`/clients/${id}/`, data);
+};
+
+export const deleteClient = (id) => {
+  return API.delete(`/clients/${id}/`);
+};
+
 export default API;
