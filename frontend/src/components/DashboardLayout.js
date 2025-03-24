@@ -7,7 +7,7 @@ const DashboardLayout = ({ children }) => {
   const navItems = [
     { name: 'Dashboard', path: '/dashboard' },
     { name: 'Projekty', path: '/projects' },
-    { name: 'Klienci', path: '/clients' },
+    { name: 'Klienci', path: '/dashboard/clients' },
     { name: 'Statystyki', path: '/stats' },
     { name: 'Profil', path: '/profile' },
     { name: 'Ustawienia', path: '/settings' },

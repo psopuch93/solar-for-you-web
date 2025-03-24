@@ -20,6 +20,8 @@ import {
   Folder
 } from 'lucide-react';
 import ProjectsPage from './ProjectsPage';
+import ClientsPage from './ClientsPage';
+import ClientForm from '../components/ClientForm';
 import MainDashboard from './MainDashboard';
 import { ProjectProvider } from '../contexts/ProjectContext';
 import { getCsrfToken } from '../utils/csrfToken';
@@ -68,6 +70,7 @@ const BusinessDashboard = ({ setIsAuthenticated }) => {
   const sidebarItems = [
     { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
     { icon: Folder, label: 'Projekty', path: '/dashboard/projects' },
+    { icon: FileText, label: 'Klienci', path: '/dashboard/clients' },
     { icon: FileText, label: 'Progres Raport', path: '/dashboard/reports' },
     { icon: Clipboard, label: 'Raporty', path: '/dashboard/analytics' },
     { icon: Truck, label: 'Zapotrzebowania', path: '/dashboard/requests' },
@@ -125,6 +128,9 @@ const BusinessDashboard = ({ setIsAuthenticated }) => {
             <Routes>
               <Route path="/" element={<MainDashboard />} />
               <Route path="/projects/*" element={<ProjectsPage />} />
+              <Route path="/clients" element={<ClientsPage />} />
+              <Route path="/clients/new" element={<ClientForm />} />
+              <Route path="/clients/:id" element={<ClientForm />} />
               {/* Pozostałe trasy można dodać w przyszłości */}
               <Route path="*" element={<div>Strona nie została znaleziona</div>} />
             </Routes>

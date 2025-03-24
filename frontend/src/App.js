@@ -55,15 +55,15 @@ function App() {
           element={isAuthenticated ? <Dashboard setIsAuthenticated={setIsAuthenticated} /> : <Navigate to="/" />}
         />
         <Route
-          path="/clients"
+          path="/dashboard/clients"
           element={isAuthenticated ? <ClientsPage /> : <Navigate to="/" />}
         />
         <Route
-          path="/clients/new"
+          path="/dashboard/clients/new"
           element={isAuthenticated ? <ClientForm /> : <Navigate to="/" />}
         />
         <Route
-          path="/clients/:id"
+          path="/dashboard/clients/:id"
           element={isAuthenticated ? <ClientForm /> : <Navigate to="/" />}
         />
       </Routes>
