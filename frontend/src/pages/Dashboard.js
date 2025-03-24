@@ -11,14 +11,11 @@ import {
   HelpCircle,
   ChevronLeft,
   ChevronRight,
-  Search,
-  Bell,
-  ShoppingCart,
-  TrendingUp,
-  ShoppingBag,
   LogOut,
-  Folder
+  Folder,
+  Users
 } from 'lucide-react';
+
 import ProjectsPage from './ProjectsPage';
 import ClientsPage from './ClientsPage';
 import ClientForm from '../components/ClientForm';
@@ -70,7 +67,7 @@ const BusinessDashboard = ({ setIsAuthenticated }) => {
   const sidebarItems = [
     { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
     { icon: Folder, label: 'Projekty', path: '/dashboard/projects' },
-    { icon: FileText, label: 'Klienci', path: '/dashboard/clients' },
+    { icon: Users, label: 'Klienci', path: '/dashboard/clients' },
     { icon: FileText, label: 'Progres Raport', path: '/dashboard/reports' },
     { icon: Clipboard, label: 'Raporty', path: '/dashboard/analytics' },
     { icon: Truck, label: 'Zapotrzebowania', path: '/dashboard/requests' },
