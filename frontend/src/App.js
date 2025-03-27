@@ -3,8 +3,6 @@ import React, { useEffect, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Dashboard from './pages/Dashboard';
 import LoginPage from './pages/LoginPage';
-import ClientsPage from './pages/ClientsPage';
-import ClientForm from './components/ClientForm';
 import './App.css';
 
 function App() {
@@ -54,17 +52,10 @@ function App() {
           path="/dashboard/*"
           element={isAuthenticated ? <Dashboard setIsAuthenticated={setIsAuthenticated} /> : <Navigate to="/" />}
         />
+        {/* Każdy inny URL, dla którego nie ma dopasowania przekierowuje na /dashboard */}
         <Route
-          path="/dashboard/clients"
-          element={isAuthenticated ? <ClientsPage /> : <Navigate to="/" />}
-        />
-        <Route
-          path="/dashboard/clients/new"
-          element={isAuthenticated ? <ClientForm /> : <Navigate to="/" />}
-        />
-        <Route
-          path="/dashboard/clients/:id"
-          element={isAuthenticated ? <ClientForm /> : <Navigate to="/" />}
+          path="*"
+          element={<Navigate to={isAuthenticated ? "/dashboard" : "/"} />}
         />
       </Routes>
     </Router>
