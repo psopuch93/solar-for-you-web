@@ -332,6 +332,16 @@ class RequisitionViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated, HasModulePrivilege]
     required_privilege = 'manage_requisitions'
 
+    def get_queryset(self):
+        """Filtruj zapotrzebowania"""
+        requisition_type = self.request.query_params.get('requisition_type', None)
+        queryset = Requisition.objects.all()
+
+        if requisition_type:
+            queryset = queryset.filter(requisition_type=requisition_type)
+
+        return queryset
+
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user, updated_by=self.request.user)
 
@@ -344,3 +354,47 @@ class RequisitionItemViewSet(viewsets.ModelViewSet):
     serializer_class = RequisitionItemSerializer
     permission_classes = [permissions.IsAuthenticated, HasModulePrivilege]
     required_privilege = 'manage_requisitions'
+
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+def validate_requisition(request):
+    """Walidacja zapotrzebowania przed zapisem"""
+    data = request.data
+    # Sprawdź, czy projekt istnieje
+    if not data.get('project'):
+        return Response({
+            'valid': False,
+            'message': 'Wybierz projekt'
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    # Sprawdź, czy są pozycje
+    if not data.get('items') or len(data.get('items', [])) == 0:
+        return Response({
+            'valid': False,
+            'message': 'Dodaj co najmniej jedną pozycję zapotrzebowania'
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    # Sprawdź pozycje zamówienia
+    for item in data.get('items', []):
+        if not item.get('item'):
+            return Response({
+                'valid': False,
+                'message': 'Wybierz przedmiot w każdej pozycji'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        if not item.get('quantity') or int(item.get('quantity', 0)) <= 0:
+            return Response({
+                'valid': False,
+                'message': 'Ilość przedmiotu musi być dodatnia'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        if not item.get('price') or float(item.get('price', 0)) <= 0:
+            return Response({
+                'valid': False,
+                'message': 'Cena przedmiotu musi być dodatnia'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+    return Response({
+        'valid': True,
+        'message': 'Dane zapotrzebowania są poprawne'
+    })

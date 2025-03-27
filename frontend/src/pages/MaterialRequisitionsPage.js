@@ -1,4 +1,3 @@
-// frontend/src/pages/MaterialRequisitionsPage.js
 import React, { useState, useEffect } from 'react';
 import { Routes, Route, useNavigate } from 'react-router-dom';
 import {
@@ -246,14 +245,13 @@ const MaterialRequisitionsPage = () => {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full
-                            ${requisition.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                              requisition.status === 'approved' ? 'bg-green-100 text-green-800' :
+                            ${requisition.status === 'to_accept' ? 'bg-yellow-100 text-yellow-800' :
+                              requisition.status === 'accepted' ? 'bg-blue-100 text-blue-800' :
                               requisition.status === 'rejected' ? 'bg-red-100 text-red-800' :
+                              requisition.status === 'in_progress' ? 'bg-orange-100 text-orange-800' :
+                              requisition.status === 'completed' ? 'bg-green-100 text-green-800' :
                               'bg-gray-100 text-gray-800'}`}>
-                            {requisition.status === 'pending' ? 'Oczekujące' :
-                             requisition.status === 'approved' ? 'Zatwierdzone' :
-                             requisition.status === 'rejected' ? 'Odrzucone' :
-                             requisition.status}
+                            {requisition.status_display || requisition.status}
                           </span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">

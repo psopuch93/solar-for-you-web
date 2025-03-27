@@ -201,9 +201,21 @@ class Item(models.Model):
     def save(self, *args, **kwargs):
         # Generowanie indeksu, jeśli nie jest ustawiony
         if not self.index:
-            # Generuj indeks na podstawie aktualnej ilości przedmiotów
-            count = Item.objects.count()
-            self.index = f"ITEM-{count:06d}"
+            # Pobierz ostatni indeks i zwiększ go o 1
+            last_item = Item.objects.order_by('-id').first()
+            if last_item and last_item.index:
+                # Wyciągnij numer z ostatniego indeksu
+                try:
+                    last_number = int(last_item.index)
+                    new_number = last_number + 1
+                except ValueError:
+                    new_number = 1
+            else:
+                new_number = 1
+
+            # Sformatuj jako 6-cyfrowy numer
+            self.index = f"{new_number:06d}"
+
         super().save(*args, **kwargs)
 
     class Meta:
@@ -217,11 +229,19 @@ class Requisition(models.Model):
         ('hr', 'HR'),
     ]
 
+    REQUISITION_STATUS_CHOICES = [
+        ('to_accept', 'Do akceptacji'),
+        ('accepted', 'Zaakceptowano'),
+        ('rejected', 'Odrzucono'),
+        ('in_progress', 'W trakcie realizacji'),
+        ('completed', 'Zrealizowano')
+    ]
+
     number = models.CharField(max_length=100, unique=True, verbose_name="Numer zapotrzebowania")
     project = models.ForeignKey(Project, on_delete=models.SET_NULL, null=True, related_name='requisitions', verbose_name="Projekt")
     deadline = models.DateField(verbose_name="Termin realizacji")
     requisition_type = models.CharField(max_length=20, choices=TYPE_CHOICES, default='material', verbose_name="Typ zapotrzebowania")
-    status = models.CharField(max_length=20, default='pending', verbose_name="Status")
+    status = models.CharField(max_length=20, choices=REQUISITION_STATUS_CHOICES, default='to_accept', verbose_name="Status")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Data utworzenia")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Data aktualizacji")
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='created_requisitions', verbose_name="Utworzony przez")
@@ -256,10 +276,10 @@ class Requisition(models.Model):
 
 class RequisitionItem(models.Model):
     """Model pozycji zapotrzebowania"""
-    requisition = models.ForeignKey(Requisition, on_delete=models.CASCADE, related_name='items', verbose_name="Zapotrzebowanie")
+    requisition = models.ForeignKey('Requisition', on_delete=models.CASCADE, related_name='items', verbose_name="Zapotrzebowanie")
     item = models.ForeignKey(Item, on_delete=models.CASCADE, related_name='requisition_items', verbose_name="Przedmiot")
     quantity = models.PositiveIntegerField(default=1, verbose_name="Ilość")
-    price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="Cena")
+    price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=False, verbose_name="Cena")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Data utworzenia")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Data aktualizacji")
 
@@ -268,10 +288,21 @@ class RequisitionItem(models.Model):
 
     def save(self, *args, **kwargs):
         # Jeśli cena nie jest podana, użyj ceny przedmiotu
-        if not self.price and self.item.price:
+        if not self.price and self.item and self.item.price:
             self.price = self.item.price
+
+        # Jeśli nadal nie ma ceny, podnieś wyjątek
+        if not self.price:
+            raise ValidationError('Cena jest wymagana')
+
         super().save(*args, **kwargs)
 
     class Meta:
         verbose_name = "Pozycja zapotrzebowania"
         verbose_name_plural = "Pozycje zapotrzebowań"
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(price__gt=0),
+                name='positive_price_constraint'
+            )
+        ]

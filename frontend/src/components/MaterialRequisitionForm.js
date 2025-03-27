@@ -1,4 +1,3 @@
-// frontend/src/components/MaterialRequisitionForm.js
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
@@ -24,13 +23,13 @@ const MaterialRequisitionForm = ({ mode = 'view' }) => {
     project: '',
     deadline: '',
     requisition_type: 'material',
-    status: 'pending',
+    status: 'to_accept',
     items: []
   });
 
   const [availableProjects, setAvailableProjects] = useState([]);
   const [availableItems, setAvailableItems] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [isEditing, setIsEditing] = useState(mode === 'create' || mode === 'edit');
 
@@ -131,7 +130,7 @@ const MaterialRequisitionForm = ({ mode = 'view' }) => {
 
   const handleEditItem = (index) => {
     const item = requisition.items[index];
-    setSelectedItem(item.item);
+    setSelectedItem(item);
     setItemQuantity(item.quantity);
     setItemPrice(item.price || '');
     setCurrentItemIndex(index);
@@ -147,6 +146,14 @@ const MaterialRequisitionForm = ({ mode = 'view' }) => {
 
   const handleSaveItem = () => {
     if (!selectedItem) {
+      setError('Wybierz przedmiot');
+      return;
+    }
+
+    // Walidacja ceny
+    const finalPrice = itemPrice || selectedItem.price;
+    if (!finalPrice || parseFloat(finalPrice) <= 0) {
+      setError('Cena musi być dodatnia');
       return;
     }
 
@@ -155,7 +162,7 @@ const MaterialRequisitionForm = ({ mode = 'view' }) => {
       item_name: selectedItem.name,
       item_index: selectedItem.index,
       quantity: itemQuantity,
-      price: itemPrice || selectedItem.price
+      price: parseFloat(finalPrice)
     };
 
     if (currentItemIndex !== null) {
@@ -173,42 +180,34 @@ const MaterialRequisitionForm = ({ mode = 'view' }) => {
     }
 
     setShowItemModal(false);
+    setError(null);
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
 
     try {
+      // Walidacja na froncie
+      const validationResponse = await fetch('/api/validate-requisition/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': getCsrfToken(),
+        },
+        body: JSON.stringify(requisition),
+        credentials: 'same-origin',
+      });
+
+      const validationResult = await validationResponse.json();
+      if (!validationResult.valid) {
+        setError(validationResult.message);
+        return;
+      }
+
       setLoading(true);
 
-      // Walidacja
-      if (!requisition.project) {
-        setError('Projekt jest wymagany');
-        setLoading(false);
-        return;
-      }
-
-      if (!requisition.deadline) {
-        setError('Termin realizacji jest wymagany');
-        setLoading(false);
-        return;
-      }
-
-      if (requisition.items.length === 0) {
-        setError('Dodaj co najmniej jeden przedmiot do zapotrzebowania');
-        setLoading(false);
-        return;
-      }
-
-      // Przygotuj dane do wysłania
-      const requisitionData = {
-        project: requisition.project,
-        deadline: requisition.deadline,
-        requisition_type: 'material',
-        status: requisition.status || 'pending'
-      };
-
       let response;
+      const requisitionData = { ...requisition };
 
       if (mode === 'create') {
         // Tworzenie nowego zapotrzebowania
@@ -221,36 +220,6 @@ const MaterialRequisitionForm = ({ mode = 'view' }) => {
           body: JSON.stringify(requisitionData),
           credentials: 'same-origin',
         });
-
-        if (!response.ok) {
-          throw new Error('Błąd tworzenia zapotrzebowania');
-        }
-
-        const newRequisition = await response.json();
-
-        // Dodaj przedmioty do zapotrzebowania
-        for (const item of requisition.items) {
-          const itemData = {
-            requisition: newRequisition.id,
-            item: item.item,
-            quantity: item.quantity,
-            price: item.price
-          };
-
-          const itemResponse = await fetch('/api/requisition-items/', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'X-CSRFToken': getCsrfToken(),
-            },
-            body: JSON.stringify(itemData),
-            credentials: 'same-origin',
-          });
-
-          if (!itemResponse.ok) {
-            throw new Error('Błąd dodawania przedmiotu do zapotrzebowania');
-          }
-        }
       } else {
         // Aktualizacja istniejącego zapotrzebowania
         response = await fetch(`/api/requisitions/${id}/`, {
@@ -262,72 +231,11 @@ const MaterialRequisitionForm = ({ mode = 'view' }) => {
           body: JSON.stringify(requisitionData),
           credentials: 'same-origin',
         });
+      }
 
-        if (!response.ok) {
-          throw new Error('Błąd aktualizacji zapotrzebowania');
-        }
-
-        // Pobierz istniejące przedmioty
-        const itemsResponse = await fetch(`/api/requisition-items/?requisition=${id}`, {
-          credentials: 'same-origin',
-        });
-
-        if (!itemsResponse.ok) {
-          throw new Error('Błąd pobierania przedmiotów zapotrzebowania');
-        }
-
-        const existingItems = await itemsResponse.json();
-
-        // Usuń przedmioty, które nie są już w zapotrzebowaniu
-        for (const existingItem of existingItems) {
-          const stillExists = requisition.items.some(
-            item => item.id === existingItem.id
-          );
-
-          if (!stillExists) {
-            await fetch(`/api/requisition-items/${existingItem.id}/`, {
-              method: 'DELETE',
-              headers: {
-                'X-CSRFToken': getCsrfToken(),
-              },
-              credentials: 'same-origin',
-            });
-          }
-        }
-
-        // Dodaj lub zaktualizuj przedmioty
-        for (const item of requisition.items) {
-          const itemData = {
-            requisition: id,
-            item: item.item,
-            quantity: item.quantity,
-            price: item.price
-          };
-
-          if (item.id) {
-            // Aktualizuj istniejący przedmiot
-            await fetch(`/api/requisition-items/${item.id}/`, {
-              method: 'PATCH',
-              headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': getCsrfToken(),
-              },
-              body: JSON.stringify(itemData),
-              credentials: 'same-origin',
-            });
-          } else {
-            // Dodaj nowy przedmiot
-            await fetch('/api/requisition-items/', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': getCsrfToken(),
-              },
-              body: JSON.stringify(itemData),
-              credentials: 'same-origin',
-            });
-          }
-        }
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Błąd zapisu zapotrzebowania');
       }
 
       // Sukces - powrót do listy zapotrzebowań
@@ -341,11 +249,6 @@ const MaterialRequisitionForm = ({ mode = 'view' }) => {
     }
   };
 
-  // Zmiana trybu z podglądu na edycję
-  const handleEditClick = () => {
-    setIsEditing(true);
-  };
-
   // Obliczanie łącznej wartości zapotrzebowania
   const calculateTotal = () => {
     return requisition.items.reduce((total, item) => {
@@ -354,7 +257,7 @@ const MaterialRequisitionForm = ({ mode = 'view' }) => {
     }, 0);
   };
 
-  // Filtrowane przedmioty dla modalu
+  // Filtrowane przedmioty dla modala
   const filteredItems = availableItems.filter(item =>
     item.name.toLowerCase().includes(itemSearchTerm.toLowerCase()) ||
     item.index.toLowerCase().includes(itemSearchTerm.toLowerCase())
@@ -387,16 +290,6 @@ const MaterialRequisitionForm = ({ mode = 'view' }) => {
           </button>
           <h1 className="text-3xl font-bold text-gray-800">{getFormTitle()}</h1>
         </div>
-
-        {mode === 'view' && !isEditing && (
-          <button
-            onClick={handleEditClick}
-            className="flex items-center bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition-colors"
-          >
-            <EditIcon className="mr-2" size={18} />
-            Edytuj
-          </button>
-        )}
       </div>
 
       {error && (
@@ -455,15 +348,16 @@ const MaterialRequisitionForm = ({ mode = 'view' }) => {
                 <select
                   id="status"
                   name="status"
-                  value={requisition.status || 'pending'}
+                  value={requisition.status || 'to_accept'}
                   onChange={handleChange}
                   disabled={!isEditing}
                   className={`w-full px-4 py-2 border ${isEditing ? 'border-gray-300' : 'border-gray-200 bg-gray-50'} rounded-lg focus:outline-none ${isEditing ? 'focus:ring-2 focus:ring-orange-500' : ''}`}
                 >
-                  <option value="pending">Oczekujące</option>
-                  <option value="approved">Zatwierdzone</option>
-                  <option value="rejected">Odrzucone</option>
-                  <option value="completed">Zrealizowane</option>
+                  <option value="to_accept">Do akceptacji</option>
+                  <option value="accepted">Zaakceptowano</option>
+                  <option value="rejected">Odrzucono</option>
+                  <option value="in_progress">W trakcie realizacji</option>
+                  <option value="completed">Zrealizowano</option>
                 </select>
               </div>
             )}

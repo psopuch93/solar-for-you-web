@@ -226,12 +226,13 @@ class RequisitionSerializer(serializers.ModelSerializer):
     project_name = serializers.SerializerMethodField()
     items = RequisitionItemSerializer(many=True, read_only=True)
     type_display = serializers.CharField(source='get_requisition_type_display', read_only=True)
+    status_display = serializers.SerializerMethodField()
     total_price = serializers.SerializerMethodField()
 
     class Meta:
         model = Requisition
         fields = ('id', 'number', 'project', 'project_name', 'deadline', 'requisition_type', 'type_display',
-                 'status', 'items', 'total_price', 'created_at', 'updated_at',
+                 'status', 'status_display', 'items', 'total_price', 'created_at', 'updated_at',
                  'created_by', 'created_by_name', 'updated_by', 'updated_by_name')
         read_only_fields = ('id', 'number', 'created_at', 'updated_at', 'created_by', 'updated_by')
 
@@ -251,3 +252,7 @@ class RequisitionSerializer(serializers.ModelSerializer):
     def get_total_price(self, obj):
         total = sum(item.price * item.quantity for item in obj.items.all() if item.price is not None)
         return float(total)
+
+    def get_status_display(self, obj):
+        status_map = dict(self.Meta.model.REQUISITION_STATUS_CHOICES)
+        return status_map.get(obj.status, obj.status)

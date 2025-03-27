@@ -1,6 +1,6 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import UserViewSet, UserProfileViewSet,ProjectViewSet, ClientViewSet,ProjectTagViewSet, EmplTagViewSet,EmployeeViewSet,check_project_name, check_pesel, ItemViewSet, RequisitionViewSet, RequisitionItemViewSet
+from .views import UserViewSet, UserProfileViewSet,ProjectViewSet, ClientViewSet,ProjectTagViewSet, EmplTagViewSet,EmployeeViewSet,check_project_name, check_pesel, ItemViewSet, RequisitionViewSet, RequisitionItemViewSet, validate_requisition
 
 # Utwórz router dla widoków ViewSet
 router = DefaultRouter()
@@ -21,4 +21,5 @@ urlpatterns = [
     # Dodaj ścieżkę do sprawdzania unikalności nazwy projektu
     path('check-project-name/', check_project_name, name='check_project_name'),
     path('check-pesel/', check_pesel, name='check_pesel'),
+    path('validate-requisition/', validate_requisition, name='validate_requisition'),
 ]
