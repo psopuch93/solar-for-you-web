@@ -9,10 +9,11 @@ from django.contrib.auth import authenticate, login
 from django.contrib.auth.models import User
 from django.db.models import Q
 import json
-from .models import UserProfile, Project, Client, ProjectTag
+from .models import UserProfile, Project, Client, ProjectTag, Employee, Empl_tag, Requisition, Item, RequisitionItem
 from .serializers import (
     UserSerializer, UserProfileSerializer, ProjectSerializer,
-    ClientSerializer, ProjectTagSerializer
+    ClientSerializer, ProjectTagSerializer, EmployeeSerializer, EmplTagSerializer,
+    ItemSerializer, RequisitionSerializer, RequisitionItemSerializer
 )
 
 class IsAdminOrOwner(permissions.BasePermission):
@@ -232,18 +233,18 @@ def logout_api(request):
 @api_view(['GET'])
 @permission_classes([permissions.IsAuthenticated])
 def check_project_name(request):
-    """Sprawdza czy nazwa projektu jest unikalna"""
+    # Checks if a project name is unique
     name = request.GET.get('name')
-    project_id = request.GET.get('id')  # Opcjonalnie, dla edycji
+    project_id = request.GET.get('id')  # Optional, for editing
 
     if not name:
-        return Response({'valid': False, 'message': 'Brak nazwy projektu'}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'valid': False, 'message': 'No project name provided'}, status=status.HTTP_400_BAD_REQUEST)
 
-    # Sprawdzamy czy nazwa ma minimalną długość
+    # Check if name has minimum length
     if len(name) < 3:
-        return Response({'valid': False, 'message': 'Nazwa projektu musi mieć co najmniej 3 znaki'})
+        return Response({'valid': False, 'message': 'Project name must be at least 3 characters'})
 
-    # Dla przypadku edycji - wykluczamy bieżący projekt
+    # For editing case - exclude current project
     query = Q(name=name)
     if project_id:
         query &= ~Q(id=project_id)
@@ -251,6 +252,95 @@ def check_project_name(request):
     exists = Project.objects.filter(query).exists()
 
     if exists:
-        return Response({'valid': False, 'message': 'Projekt o tej nazwie już istnieje'})
+        return Response({'valid': False, 'message': 'A project with this name already exists'})
     else:
-        return Response({'valid': True, 'message': 'Nazwa dostępna'})
+        return Response({'valid': True, 'message': 'Name is available'})
+
+# Add these ViewSets to the existing views.py file
+
+class EmplTagViewSet(viewsets.ModelViewSet):
+    """API endpoint dla tagów pracowników"""
+    queryset = Empl_tag.objects.all()
+    serializer_class = EmplTagSerializer
+    permission_classes = [permissions.IsAuthenticated, HasModulePrivilege]
+    required_privilege = 'manage_employee_tags'  # Uprawnienie do zarządzania tagami
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user, updated_by=self.request.user)
+
+    def perform_update(self, serializer):
+        serializer.save(updated_by=self.request.user)
+
+class EmployeeViewSet(viewsets.ModelViewSet):
+    """API endpoint dla pracowników"""
+    queryset = Employee.objects.all()
+    serializer_class = EmployeeSerializer
+    permission_classes = [permissions.IsAuthenticated, HasModulePrivilege]
+    required_privilege = 'manage_employees'  # Uprawnienie do zarządzania pracownikami
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user, updated_by=self.request.user)
+
+    def perform_update(self, serializer):
+        serializer.save(updated_by=self.request.user)
+
+# New endpoint to check PESEL uniqueness
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def check_pesel(request):
+    """Sprawdza czy PESEL jest unikalny"""
+    pesel = request.GET.get('pesel')
+    employee_id = request.GET.get('id')  # Optional, for editing
+
+    # Jeśli PESEL jest pusty, zwróć od razu true (pusty PESEL jest dozwolony)
+    if not pesel or pesel.strip() == '':
+        return Response({'valid': True, 'message': 'PESEL nie jest wymagany'})
+
+    # Sprawdzamy czy PESEL ma odpowiednią długość i zawiera tylko cyfry
+    if len(pesel) != 11 or not pesel.isdigit():
+        return Response({'valid': False, 'message': 'PESEL musi składać się z 11 cyfr'})
+
+    # Dla przypadku edycji - wykluczamy bieżącego pracownika
+    query = Q(pesel=pesel)
+    if employee_id:
+        query &= ~Q(id=employee_id)
+
+    exists = Employee.objects.filter(query).exists()
+
+    if exists:
+        return Response({'valid': False, 'message': 'Pracownik o tym numerze PESEL już istnieje'})
+    else:
+        return Response({'valid': True, 'message': 'PESEL dostępny'})
+
+class ItemViewSet(viewsets.ModelViewSet):
+    """API endpoint dla przedmiotów"""
+    queryset = Item.objects.all()
+    serializer_class = ItemSerializer
+    permission_classes = [permissions.IsAuthenticated, HasModulePrivilege]
+    required_privilege = 'manage_items'
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user, updated_by=self.request.user)
+
+    def perform_update(self, serializer):
+        serializer.save(updated_by=self.request.user)
+
+class RequisitionViewSet(viewsets.ModelViewSet):
+    """API endpoint dla zapotrzebowań"""
+    queryset = Requisition.objects.all()
+    serializer_class = RequisitionSerializer
+    permission_classes = [permissions.IsAuthenticated, HasModulePrivilege]
+    required_privilege = 'manage_requisitions'
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user, updated_by=self.request.user)
+
+    def perform_update(self, serializer):
+        serializer.save(updated_by=self.request.user)
+
+class RequisitionItemViewSet(viewsets.ModelViewSet):
+    """API endpoint dla pozycji zapotrzebowań"""
+    queryset = RequisitionItem.objects.all()
+    serializer_class = RequisitionItemSerializer
+    permission_classes = [permissions.IsAuthenticated, HasModulePrivilege]
+    required_privilege = 'manage_requisitions'

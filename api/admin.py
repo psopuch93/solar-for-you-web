@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django import forms
-from .models import UserProfile, Project, Client, ProjectTag
+from .models import UserProfile, Project, Client, ProjectTag, Empl_tag, Employee
 
 class UserProfileAdminForm(forms.ModelForm):
     """Formularz do zarządzania uprawnieniami w adminie"""
@@ -115,6 +115,31 @@ class ProjectAdmin(admin.ModelAdmin):
 
     def save_model(self, request, obj, form, change):
         if not change:  # Jeśli to nowy obiekt (nie edycja)
+            obj.created_by = request.user
+        obj.updated_by = request.user
+        super().save_model(request, obj, form, change)
+
+@admin.register(Empl_tag)
+class EmplTagAdmin(admin.ModelAdmin):
+    list_display = ('serial', 'created_at', 'created_by')
+    search_fields = ('serial',)
+    readonly_fields = ('created_at', 'updated_at')
+
+    def save_model(self, request, obj, form, change):
+        if not change:  # Jeśli to nowy obiekt
+            obj.created_by = request.user
+        obj.updated_by = request.user
+        super().save_model(request, obj, form, change)
+
+@admin.register(Employee)
+class EmployeeAdmin(admin.ModelAdmin):
+    list_display = ('first_name', 'last_name', 'pesel', 'current_project', 'created_at')
+    list_filter = ('current_project', 'created_at')
+    search_fields = ('first_name', 'last_name', 'pesel')
+    readonly_fields = ('created_at', 'updated_at')
+
+    def save_model(self, request, obj, form, change):
+        if not change:  # Jeśli to nowy obiekt
             obj.created_by = request.user
         obj.updated_by = request.user
         super().save_model(request, obj, form, change)

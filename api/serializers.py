@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
-from .models import UserProfile, Project, Client, ProjectTag
+from .models import UserProfile, Project, Client, ProjectTag, Empl_tag, Employee, Requisition, RequisitionItem, Item
 
 class UserSerializer(serializers.ModelSerializer):
     """Serializer dla modelu User"""
@@ -76,7 +76,26 @@ class ProjectTagSerializer(serializers.ModelSerializer):
             return f"{obj.updated_by.first_name} {obj.updated_by.last_name}".strip() or obj.updated_by.username
         return None
 
-# api/serializers.py
+class EmplTagSerializer(serializers.ModelSerializer):
+    """Serializer dla modelu Empl_tag"""
+    created_by_name = serializers.SerializerMethodField()
+    updated_by_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Empl_tag
+        fields = ('id', 'serial', 'created_at', 'updated_at', 'created_by', 'created_by_name', 'updated_by', 'updated_by_name')
+        read_only_fields = ('id', 'created_at', 'updated_at', 'created_by', 'updated_by')
+
+    def get_created_by_name(self, obj):
+        if obj.created_by:
+            return f"{obj.created_by.first_name} {obj.created_by.last_name}".strip() or obj.created_by.username
+        return None
+
+    def get_updated_by_name(self, obj):
+        if obj.updated_by:
+            return f"{obj.updated_by.first_name} {obj.updated_by.last_name}".strip() or obj.updated_by.username
+        return None
+
 class ProjectSerializer(serializers.ModelSerializer):
     """Serializer dla modelu Project"""
     client_name = serializers.SerializerMethodField()
@@ -117,3 +136,118 @@ class ProjectSerializer(serializers.ModelSerializer):
 
     def get_tag_serial(self, obj):
         return obj.project_tag.serial if obj.project_tag else None
+
+class EmployeeSerializer(serializers.ModelSerializer):
+    """Serializer dla modelu Employee"""
+    project_name = serializers.SerializerMethodField()
+    created_by_name = serializers.SerializerMethodField()
+    updated_by_name = serializers.SerializerMethodField()
+    tag_serial = serializers.SerializerMethodField()
+    full_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Employee
+        fields = ('id', 'first_name', 'last_name', 'full_name', 'pesel',
+                  'current_project', 'project_name',
+                  'employee_tag', 'tag_serial',
+                  'created_at', 'updated_at', 'created_by', 'created_by_name',
+                  'updated_by', 'updated_by_name')
+        read_only_fields = ('id', 'created_at', 'updated_at', 'created_by', 'updated_by')
+        # Dodanie niestandardowej walidacji błędów
+        extra_kwargs = {
+            'pesel': {
+                'error_messages': {
+                    'unique': 'Pracownik o tym numerze PESEL już istnieje.'
+                }
+            }
+        }
+
+    def get_full_name(self, obj):
+        return f"{obj.first_name} {obj.last_name}"
+
+    def get_project_name(self, obj):
+        return obj.current_project.name if obj.current_project else None
+
+    def get_created_by_name(self, obj):
+        if obj.created_by:
+            return f"{obj.created_by.first_name} {obj.created_by.last_name}".strip() or obj.created_by.username
+        return None
+
+    def get_updated_by_name(self, obj):
+        if obj.updated_by:
+            return f"{obj.updated_by.first_name} {obj.updated_by.last_name}".strip() or obj.updated_by.username
+        return None
+
+    def get_tag_serial(self, obj):
+        return obj.employee_tag.serial if obj.employee_tag else None
+
+class ItemSerializer(serializers.ModelSerializer):
+    """Serializer dla modelu Item"""
+    created_by_name = serializers.SerializerMethodField()
+    updated_by_name = serializers.SerializerMethodField()
+    area_display = serializers.CharField(source='get_area_display', read_only=True)
+
+    class Meta:
+        model = Item
+        fields = ('id', 'name', 'area', 'area_display', 'price', 'index', 'created_at', 'updated_at',
+                 'created_by', 'created_by_name', 'updated_by', 'updated_by_name')
+        read_only_fields = ('id', 'index', 'created_at', 'updated_at', 'created_by', 'updated_by')
+
+    def get_created_by_name(self, obj):
+        if obj.created_by:
+            return f"{obj.created_by.first_name} {obj.created_by.last_name}".strip() or obj.created_by.username
+        return None
+
+    def get_updated_by_name(self, obj):
+        if obj.updated_by:
+            return f"{obj.updated_by.first_name} {obj.updated_by.last_name}".strip() or obj.updated_by.username
+        return None
+
+class RequisitionItemSerializer(serializers.ModelSerializer):
+    """Serializer dla modelu RequisitionItem"""
+    item_name = serializers.SerializerMethodField()
+    item_index = serializers.SerializerMethodField()
+
+    class Meta:
+        model = RequisitionItem
+        fields = ('id', 'requisition', 'item', 'item_name', 'item_index', 'quantity', 'price', 'created_at', 'updated_at')
+        read_only_fields = ('id', 'created_at', 'updated_at')
+
+    def get_item_name(self, obj):
+        return obj.item.name if obj.item else None
+
+    def get_item_index(self, obj):
+        return obj.item.index if obj.item else None
+
+class RequisitionSerializer(serializers.ModelSerializer):
+    """Serializer dla modelu Requisition"""
+    created_by_name = serializers.SerializerMethodField()
+    updated_by_name = serializers.SerializerMethodField()
+    project_name = serializers.SerializerMethodField()
+    items = RequisitionItemSerializer(many=True, read_only=True)
+    type_display = serializers.CharField(source='get_requisition_type_display', read_only=True)
+    total_price = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Requisition
+        fields = ('id', 'number', 'project', 'project_name', 'deadline', 'requisition_type', 'type_display',
+                 'status', 'items', 'total_price', 'created_at', 'updated_at',
+                 'created_by', 'created_by_name', 'updated_by', 'updated_by_name')
+        read_only_fields = ('id', 'number', 'created_at', 'updated_at', 'created_by', 'updated_by')
+
+    def get_created_by_name(self, obj):
+        if obj.created_by:
+            return f"{obj.created_by.first_name} {obj.created_by.last_name}".strip() or obj.created_by.username
+        return None
+
+    def get_updated_by_name(self, obj):
+        if obj.updated_by:
+            return f"{obj.updated_by.first_name} {obj.updated_by.last_name}".strip() or obj.updated_by.username
+        return None
+
+    def get_project_name(self, obj):
+        return obj.project.name if obj.project else None
+
+    def get_total_price(self, obj):
+        total = sum(item.price * item.quantity for item in obj.items.all() if item.price is not None)
+        return float(total)

@@ -18,10 +18,13 @@ import {
 
 import ProjectsPage from './ProjectsPage';
 import ClientsPage from './ClientsPage';
+import EmployeesPage from './EmployeesPage';
 import MainDashboard from './MainDashboard';
 import { ProjectProvider } from '../contexts/ProjectContext';
 import { ClientProvider } from '../contexts/ClientContext';
+import { EmployeeProvider } from '../contexts/EmployeeContext';
 import { getCsrfToken } from '../utils/csrfToken';
+import RequisitionsPage from './RequisitionsPage';
 
 // Komponenty pomocnicze
 const SidebarItem = ({ icon: Icon, label, isExpanded, to }) => (
@@ -68,6 +71,7 @@ const BusinessDashboard = ({ setIsAuthenticated }) => {
     { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
     { icon: Folder, label: 'Projekty', path: '/dashboard/projects' },
     { icon: Users, label: 'Klienci', path: '/dashboard/clients' },
+    { icon: Users, label: 'Pracownicy', path: '/dashboard/employees' },
     { icon: FileText, label: 'Progres Raport', path: '/dashboard/reports' },
     { icon: Clipboard, label: 'Raporty', path: '/dashboard/analytics' },
     { icon: Truck, label: 'Zapotrzebowania', path: '/dashboard/requests' },
@@ -79,60 +83,64 @@ const BusinessDashboard = ({ setIsAuthenticated }) => {
   return (
     <ProjectProvider>
       <ClientProvider>
-        <div className="flex min-h-screen bg-gray-50 font-sans">
-          {/* Sidebar */}
-          <div
-            className={`bg-white shadow-lg transition-all duration-300 ${
-              isSidebarExpanded ? 'w-64' : 'w-20'
-            } p-4 flex flex-col border-r fixed h-full z-10`}
-          >
+        <EmployeeProvider>
+          <div className="flex min-h-screen bg-gray-50 font-sans">
+            {/* Sidebar */}
             <div
-              className="flex justify-between items-center mb-8 cursor-pointer"
-              onClick={() => setIsSidebarExpanded(!isSidebarExpanded)}
+              className={`bg-white shadow-lg transition-all duration-300 ${
+                isSidebarExpanded ? 'w-64' : 'w-20'
+              } p-4 flex flex-col border-r fixed h-full z-10`}
             >
-              {isSidebarExpanded && (
-                <h2 className="text-xl font-bold text-orange-600">Solar For You</h2>
-              )}
-              {isSidebarExpanded ? <ChevronLeft /> : <ChevronRight />}
-            </div>
-
-            <div className="space-y-2 flex-grow">
-              {sidebarItems.map((item) => (
-                <SidebarItem
-                  key={item.label}
-                  icon={item.icon}
-                  label={item.label}
-                  isExpanded={isSidebarExpanded}
-                  to={item.path}
-                />
-              ))}
-            </div>
-
-            {/* Przycisk wylogowania */}
-            <div className="mt-auto pt-4 border-t">
               <div
-                className="flex items-center p-3 cursor-pointer hover:bg-red-50 text-gray-600 hover:text-red-600 rounded-lg transition-all duration-200"
-                onClick={handleLogout}
+                className="flex justify-between items-center mb-8 cursor-pointer"
+                onClick={() => setIsSidebarExpanded(!isSidebarExpanded)}
               >
-                <LogOut className="mr-3" size={20} />
-                {isSidebarExpanded && <span className="text-sm font-medium">Wyloguj</span>}
+                {isSidebarExpanded && (
+                  <h2 className="text-xl font-bold text-orange-600">Solar For You</h2>
+                )}
+                {isSidebarExpanded ? <ChevronLeft /> : <ChevronRight />}
+              </div>
+
+              <div className="space-y-2 flex-grow">
+                {sidebarItems.map((item) => (
+                  <SidebarItem
+                    key={item.label}
+                    icon={item.icon}
+                    label={item.label}
+                    isExpanded={isSidebarExpanded}
+                    to={item.path}
+                  />
+                ))}
+              </div>
+
+              {/* Przycisk wylogowania */}
+              <div className="mt-auto pt-4 border-t">
+                <div
+                  className="flex items-center p-3 cursor-pointer hover:bg-red-50 text-gray-600 hover:text-red-600 rounded-lg transition-all duration-200"
+                  onClick={handleLogout}
+                >
+                  <LogOut className="mr-3" size={20} />
+                  {isSidebarExpanded && <span className="text-sm font-medium">Wyloguj</span>}
+                </div>
+              </div>
+            </div>
+
+            {/* Main Content */}
+            <div className={`flex-grow transition-all duration-300 ${isSidebarExpanded ? 'ml-64' : 'ml-20'}`}>
+              <div className="p-8">
+                <Routes>
+                  <Route path="/" element={<MainDashboard />} />
+                  <Route path="/projects/*" element={<ProjectsPage />} />
+                  <Route path="/clients/*" element={<ClientsPage />} />
+                  <Route path="/employees/*" element={<EmployeesPage />} />
+                  <Route path="/requests/*" element={<RequisitionsPage />} />
+                  {/* Pozostałe trasy można dodać w przyszłości */}
+                  <Route path="*" element={<div>Strona nie została znaleziona</div>} />
+                </Routes>
               </div>
             </div>
           </div>
-
-          {/* Main Content */}
-          <div className={`flex-grow transition-all duration-300 ${isSidebarExpanded ? 'ml-64' : 'ml-20'}`}>
-            <div className="p-8">
-              <Routes>
-                <Route path="/" element={<MainDashboard />} />
-                <Route path="/projects/*" element={<ProjectsPage />} />
-                <Route path="/clients/*" element={<ClientsPage />} />
-                {/* Pozostałe trasy można dodać w przyszłości */}
-                <Route path="*" element={<div>Strona nie została znaleziona</div>} />
-              </Routes>
-            </div>
-          </div>
-        </div>
+        </EmployeeProvider>
       </ClientProvider>
     </ProjectProvider>
   );

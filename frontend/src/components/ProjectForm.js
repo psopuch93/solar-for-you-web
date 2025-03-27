@@ -36,6 +36,10 @@ const ProjectForm = ({ mode = 'view', onSuccess }) => {
     longitude: ''
   });
 
+  // Nowe stany dla walidacji nazwy projektu
+  const [nameValid, setNameValid] = useState(true);
+  const [nameMessage, setNameMessage] = useState('');
+
   const [availableClients, setAvailableClients] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -98,9 +102,48 @@ const ProjectForm = ({ mode = 'view', onSuccess }) => {
     }
   };
 
+  // Nowa funkcja do walidacji nazwy projektu
+  const validateProjectName = async (name) => {
+    // Podstawowa walidacja - minimalna długość
+    if (name.length < 3) {
+      setNameValid(false);
+      setNameMessage('Nazwa projektu musi mieć co najmniej 3 znaki');
+      return false;
+    }
+
+    try {
+      const url = `/api/check-project-name/?name=${encodeURIComponent(name)}${id ? `&id=${id}` : ''}`;
+      const response = await fetch(url, {
+        credentials: 'same-origin',
+      });
+
+      if (!response.ok) {
+        throw new Error('Błąd sprawdzania nazwy projektu');
+      }
+
+      const data = await response.json();
+      setNameValid(data.valid);
+      setNameMessage(data.message);
+      return data.valid;
+    } catch (err) {
+      console.error('Błąd walidacji nazwy projektu:', err);
+      setNameValid(false);
+      setNameMessage('Błąd sprawdzania nazwy projektu. Spróbuj ponownie.');
+      return false;
+    }
+  };
+
   const handleChange = (e) => {
     const { name, value } = e.target;
     setProject(prev => ({ ...prev, [name]: value }));
+
+    // Walidacja nazwy projektu podczas pisania
+    if (name === 'name' && value) {
+      validateProjectName(value);
+    } else if (name === 'name' && !value) {
+      setNameValid(true);
+      setNameMessage('');
+    }
   };
 
   // Obsługa zmiany współrzędnych
@@ -121,6 +164,13 @@ const ProjectForm = ({ mode = 'view', onSuccess }) => {
       // Walidacja
       if (!project.name.trim()) {
         setError('Nazwa projektu jest wymagana');
+        setLoading(false);
+        return;
+      }
+
+      // Walidacja nazwy projektu przed wysłaniem
+      if (!(await validateProjectName(project.name))) {
+        setError('Nieprawidłowa nazwa projektu');
         setLoading(false);
         return;
       }
@@ -368,9 +418,24 @@ const ProjectForm = ({ mode = 'view', onSuccess }) => {
                 value={project.name}
                 onChange={handleChange}
                 disabled={!isEditing}
-                className={`w-full px-4 py-2 border ${isEditing ? 'border-gray-300' : 'border-gray-200 bg-gray-50'} rounded-lg focus:outline-none ${isEditing ? 'focus:ring-2 focus:ring-orange-500' : ''}`}
+                className={`w-full px-4 py-2 border ${
+                  isEditing
+                    ? nameValid
+                      ? 'border-gray-300'
+                      : 'border-red-300 bg-red-50'
+                    : 'border-gray-200 bg-gray-50'
+                } rounded-lg focus:outline-none ${
+                  isEditing
+                    ? nameValid
+                      ? 'focus:ring-2 focus:ring-orange-500'
+                      : 'focus:ring-2 focus:ring-red-500'
+                    : ''
+                }`}
                 placeholder="Wprowadź nazwę projektu"
               />
+              {isEditing && !nameValid && nameMessage && (
+                <p className="mt-1 text-sm text-red-600">{nameMessage}</p>
+              )}
             </div>
 
             <div className="mb-4">
