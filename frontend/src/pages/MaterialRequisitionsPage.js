@@ -9,8 +9,10 @@ import {
   Eye,
   ArrowUpDown,
   AlertCircle,
-  ArrowLeft,
-  FileText
+  Loader,
+  Clock,
+  CheckCircle,
+  XCircle
 } from 'lucide-react';
 import { getCsrfToken } from '../utils/csrfToken';
 import MaterialRequisitionForm from '../components/MaterialRequisitionForm';
@@ -23,79 +25,105 @@ const MaterialRequisitionsPage = () => {
     shouldRefresh,
     loading,
     error,
+    refreshRequisitions,
     updateRequisitions
   } = useRequisitions();
 
-  const { confirmDelete } = useDialog();
-
+  const { confirmDialog } = useDialog();
   const [searchTerm, setSearchTerm] = useState('');
   const [sortField, setSortField] = useState('created_at');
   const [sortDirection, setSortDirection] = useState('desc');
+  const [statusFilter, setStatusFilter] = useState('all');
   const [localLoading, setLocalLoading] = useState(false);
+  const [selectedStatuses, setSelectedStatuses] = useState({});
 
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Definiujemy funkcję fetchData jako useCallback, aby zapobiec zbędnym re-renderowaniom
-  const fetchData = useCallback(async (searchQuery = '') => {
+  // Synchronizacja statusów z danymi zapotrzebowań
+  useEffect(() => {
+    const initialStatuses = {};
+    requisitions.forEach(req => {
+      initialStatuses[req.id] = req.status;
+    });
+    setSelectedStatuses(initialStatuses);
+  }, [requisitions]);
+
+  const handleStatusChange = async (requisitionId, newStatus) => {
+    const statusLabels = {
+      'to_accept': 'Do akceptacji',
+      'accepted': 'Zaakceptowano',
+      'rejected': 'Odrzucono',
+      'in_progress': 'W trakcie realizacji',
+      'completed': 'Zrealizowano'
+    };
+
     try {
-      setLocalLoading(true);
-      // Dodajemy parametr wyszukiwania do URL jeśli istnieje
-      const searchParam = searchQuery ? `&search=${encodeURIComponent(searchQuery)}` : '';
-      const response = await fetch(`/api/requisitions/?requisition_type=material${searchParam}`, {
+      // Natychmiastowa aktualizacja lokalnego stanu
+      const updatedRequisitions = requisitions.map(req =>
+        req.id === requisitionId
+          ? { ...req, status: newStatus, status_display: statusLabels[newStatus] }
+          : req
+      );
+
+      // Zaktualizuj stan lokalny przed wysłaniem żądania
+      updateRequisitions(updatedRequisitions);
+
+      const csrfToken = getCsrfToken();
+
+      const response = await fetch(`/api/requisitions/${requisitionId}/`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': csrfToken,
+        },
+        body: JSON.stringify({
+          status: newStatus,
+          requisition_type: 'material'
+        }),
         credentials: 'same-origin',
       });
 
       if (!response.ok) {
-        throw new Error('Błąd pobierania zapotrzebowań');
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Błąd zmiany statusu');
       }
 
-      const data = await response.json();
-      updateRequisitions(data);
-    } catch (err) {
-      console.error('Błąd:', err);
-    } finally {
-      setLocalLoading(false);
+      // Opcjonalnie: pobierz zaktualizowane dane z serwera
+      const updatedRequisition = await response.json();
+
+      // Zaktualizuj stan z danymi z serwera
+      updateRequisitions(
+        requisitions.map(req =>
+          req.id === requisitionId ? updatedRequisition : req
+        )
+      );
+
+      // Wyświetl komunikat o sukcesie
+      confirmDialog({
+        type: 'info',
+        message: `Status zapotrzebowania został zmieniony na "${statusLabels[newStatus]}"`
+      });
+
+    } catch (error) {
+      console.error('Błąd zmiany statusu:', error);
+
+      // Przywróć poprzedni status w razie błędu
+      updateRequisitions(requisitions);
+
+      // Pokaż błąd
+      confirmDialog({
+        type: 'warning',
+        message: error.message || 'Nie udało się zmienić statusu'
+      });
     }
-  }, [updateRequisitions]);
-
-  // Efekt do ładowania zapotrzebowań gdy shouldRefresh zmienia się lub jesteśmy na głównej stronie
-  useEffect(() => {
-    if (shouldRefresh && location.pathname === '/dashboard/requests/material') {
-      fetchData();
-    }
-  }, [shouldRefresh, location.pathname, fetchData]);
-
-  // Dodatkowy efekt do ładowania danych przy pierwszym renderowaniu
-  useEffect(() => {
-    if (location.pathname === '/dashboard/requests/material') {
-      fetchData();
-    }
-  }, [location.pathname, fetchData]);
-
-  // Obsługa wyszukiwania z debounce
-  const handleSearchChange = (e) => {
-    const value = e.target.value;
-    setSearchTerm(value);
-
-    // Czyszczenie poprzedniego timera debounce
-    if (window.searchTimer) {
-      clearTimeout(window.searchTimer);
-    }
-
-    // Ustawienie nowego timera (300ms opóźnienia)
-    window.searchTimer = setTimeout(() => {
-      // Wywołanie API tylko jeśli wartość ma co najmniej 2 znaki lub jest pusta
-      if (value.length === 0 || value.length >= 2) {
-        fetchData(value);
-      }
-    }, 300);
   };
 
   const handleDelete = async (id, number) => {
-    confirmDelete(
-      `Czy na pewno chcesz usunąć zapotrzebowanie ${number}?`,
-      async () => {
+    confirmDialog({
+      type: 'delete',
+      message: `Czy na pewno chcesz usunąć zapotrzebowanie ${number}?`,
+      onConfirm: async () => {
         try {
           const response = await fetch(`/api/requisitions/${id}/`, {
             method: 'DELETE',
@@ -110,12 +138,16 @@ const MaterialRequisitionsPage = () => {
           }
 
           // Odśwież dane lokalnie
-          fetchData();
+          refreshRequisitions();
         } catch (err) {
           console.error('Błąd:', err);
+          confirmDialog({
+            type: 'warning',
+            message: 'Nie udało się usunąć zapotrzebowania'
+          });
         }
       }
-    );
+    });
   };
 
   const handleSort = (field) => {
@@ -127,6 +159,34 @@ const MaterialRequisitionsPage = () => {
     }
   };
 
+  const getStatusIcon = (status) => {
+    switch(status) {
+      case 'to_accept':
+        return <Clock className="text-yellow-500" size={20} />;
+      case 'accepted':
+        return <CheckCircle className="text-blue-500" size={20} />;
+      case 'in_progress':
+        return <Loader className="text-orange-500" size={20} />;
+      case 'completed':
+        return <CheckCircle className="text-green-500" size={20} />;
+      case 'rejected':
+        return <XCircle className="text-red-500" size={20} />;
+      default:
+        return null;
+    }
+  };
+
+  const getStatusText = (status) => {
+    const statusMap = {
+      'to_accept': 'Do akceptacji',
+      'accepted': 'Zaakceptowano',
+      'rejected': 'Odrzucono',
+      'in_progress': 'W trakcie realizacji',
+      'completed': 'Zrealizowano'
+    };
+    return statusMap[status] || status;
+  };
+
   // Sortowanie zapotrzebowań
   const sortedRequisitions = [...requisitions].sort((a, b) => {
     let aValue = a[sortField];
@@ -134,8 +194,8 @@ const MaterialRequisitionsPage = () => {
 
     // Obsługa pól zagnieżdżonych
     if (sortField === 'project_name') {
-      aValue = a.project_name;
-      bValue = b.project_name;
+      aValue = a.project_name || '';
+      bValue = b.project_name || '';
     }
 
     // Obsługa dat
@@ -165,30 +225,31 @@ const MaterialRequisitionsPage = () => {
       : aValue < bValue ? 1 : -1;
   });
 
-  // Filtrowanie zapotrzebowań - teraz tylko dla wyszukiwań lokalnych (niezależnie od zapytania do API)
-  const filteredRequisitions = sortedRequisitions;
+  // Filtrowanie zapotrzebowań
+  const filteredRequisitions = sortedRequisitions.filter(requisition => {
+    // Filtrowanie po statusie
+    if (statusFilter !== 'all' && requisition.status !== statusFilter) {
+      return false;
+    }
 
-  // Używamy localLoading lub loading z kontekstu
-  const isLoading = localLoading || loading;
+    // Filtrowanie po wyszukiwanej frazie
+    const searchLower = searchTerm.toLowerCase();
+    return (
+      requisition.number?.toLowerCase().includes(searchLower) ||
+      requisition.project_name?.toLowerCase().includes(searchLower) ||
+      (requisition.comment && requisition.comment.toLowerCase().includes(searchLower))
+    );
+  });
 
   return (
     <Routes>
       <Route path="/" element={
         <div>
-          <div className="flex items-center mb-8">
-            <button
-              onClick={() => navigate('/dashboard/requests')}
-              className="mr-4 text-gray-600 hover:text-gray-900"
-            >
-              <ArrowLeft size={20} />
-            </button>
+          <div className="flex justify-between items-center mb-8">
             <div>
               <h1 className="text-3xl font-bold text-gray-800">Zapotrzebowania Materiałowe</h1>
               <p className="text-gray-600 mt-1">Zarządzaj zapotrzebowaniami na materiały, narzędzia i sprzęt</p>
             </div>
-          </div>
-
-          <div className="flex justify-between items-center mb-6">
             <button
               onClick={() => navigate('/dashboard/requests/material/new')}
               className="flex items-center bg-orange-500 text-white px-4 py-2 rounded-lg hover:bg-orange-600 transition-colors"
@@ -196,21 +257,86 @@ const MaterialRequisitionsPage = () => {
               <PlusCircle className="mr-2" size={18} />
               Nowe zapotrzebowanie
             </button>
-
-            <div className="relative w-full max-w-md ml-4">
-              <input
-                type="text"
-                placeholder="Szukaj zapotrzebowań, przedmiotów..."
-                className="pl-10 pr-4 py-2 w-full rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-orange-500"
-                value={searchTerm}
-                onChange={handleSearchChange}
-              />
-              <Search className="absolute left-3 top-2.5 text-gray-400" size={18} />
-            </div>
           </div>
 
           <div className="bg-white rounded-xl shadow-md p-6 mb-8">
-            {isLoading ? (
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+              <div className="relative w-full md:w-auto md:flex-1">
+                <input
+                  type="text"
+                  placeholder="Szukaj zapotrzebowań..."
+                  className="pl-10 pr-4 py-2 w-full rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-orange-500"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                />
+                <Search className="absolute left-3 top-2.5 text-gray-400" size={18} />
+              </div>
+
+              <div className="flex flex-wrap gap-2 w-full md:w-auto">
+                <button
+                  onClick={() => setStatusFilter('all')}
+                  className={`px-3 py-1 rounded-lg text-sm font-medium ${
+                    statusFilter === 'all'
+                      ? 'bg-gray-200 text-gray-800'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  Wszystkie
+                </button>
+                <button
+                  onClick={() => setStatusFilter('to_accept')}
+                  className={`px-3 py-1 rounded-lg text-sm font-medium ${
+                    statusFilter === 'to_accept'
+                      ? 'bg-yellow-200 text-yellow-800'
+                      : 'bg-yellow-100 text-yellow-600 hover:bg-yellow-200'
+                  }`}
+                >
+                  Do akceptacji
+                </button>
+                <button
+                  onClick={() => setStatusFilter('accepted')}
+                  className={`px-3 py-1 rounded-lg text-sm font-medium ${
+                    statusFilter === 'accepted'
+                      ? 'bg-blue-200 text-blue-800'
+                      : 'bg-blue-100 text-blue-600 hover:bg-blue-200'
+                  }`}
+                >
+                  Zaakceptowane
+                </button>
+                <button
+                  onClick={() => setStatusFilter('in_progress')}
+                  className={`px-3 py-1 rounded-lg text-sm font-medium ${
+                    statusFilter === 'in_progress'
+                      ? 'bg-orange-200 text-orange-800'
+                      : 'bg-orange-100 text-orange-600 hover:bg-orange-200'
+                  }`}
+                >
+                  W realizacji
+                </button>
+                <button
+                  onClick={() => setStatusFilter('completed')}
+                  className={`px-3 py-1 rounded-lg text-sm font-medium ${
+                    statusFilter === 'completed'
+                      ? 'bg-green-200 text-green-800'
+                      : 'bg-green-100 text-green-600 hover:bg-green-200'
+                  }`}
+                >
+                  Zrealizowane
+                </button>
+                <button
+                  onClick={() => setStatusFilter('rejected')}
+                  className={`px-3 py-1 rounded-lg text-sm font-medium ${
+                    statusFilter === 'rejected'
+                      ? 'bg-red-200 text-red-800'
+                      : 'bg-red-100 text-red-600 hover:bg-red-200'
+                  }`}
+                >
+                  Odrzucone
+                </button>
+              </div>
+            </div>
+
+            {loading ? (
               <div className="flex justify-center p-8">
                 <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-orange-500"></div>
               </div>
@@ -221,9 +347,7 @@ const MaterialRequisitionsPage = () => {
               </div>
             ) : filteredRequisitions.length === 0 ? (
               <div className="text-center text-gray-500 p-4">
-                <FileText className="mx-auto mb-2" size={48} />
-                <p className="text-lg font-medium">Brak zapotrzebowań</p>
-                <p className="mt-1">Utwórz nowe zapotrzebowanie, aby zobaczyć je na liście</p>
+                Brak zapotrzebowań spełniających kryteria wyszukiwania
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -254,12 +378,6 @@ const MaterialRequisitionsPage = () => {
                           {sortField === 'status' && <ArrowUpDown className="ml-1" size={14} />}
                         </div>
                       </th>
-                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer" onClick={() => handleSort('total_price')}>
-                        <div className="flex items-center">
-                          Wartość
-                          {sortField === 'total_price' && <ArrowUpDown className="ml-1" size={14} />}
-                        </div>
-                      </th>
                       <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer" onClick={() => handleSort('created_at')}>
                         <div className="flex items-center">
                           Data utworzenia
@@ -286,20 +404,9 @@ const MaterialRequisitionsPage = () => {
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full
-                            ${requisition.status === 'to_accept' ? 'bg-yellow-100 text-yellow-800' :
-                              requisition.status === 'accepted' ? 'bg-blue-100 text-blue-800' :
-                              requisition.status === 'rejected' ? 'bg-red-100 text-red-800' :
-                              requisition.status === 'in_progress' ? 'bg-orange-100 text-orange-800' :
-                              requisition.status === 'completed' ? 'bg-green-100 text-green-800' :
-                              'bg-gray-100 text-gray-800'}`}>
-                            {requisition.status_display || requisition.status}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-gray-500">
-                            {requisition.total_price !== null ?
-                             `${requisition.total_price.toLocaleString()} zł` : '-'}
+                          <div className="flex items-center">
+                            {getStatusIcon(requisition.status)}
+                            <span className="ml-2">{getStatusText(requisition.status)}</span>
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
@@ -307,7 +414,7 @@ const MaterialRequisitionsPage = () => {
                             {requisition.created_at ? new Date(requisition.created_at).toLocaleDateString() : '-'}
                           </div>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                        <td className="px-6 py-4 whitespace-nowrap text-right">
                           <div className="flex justify-end space-x-2">
                             <button
                               onClick={() => navigate(`/dashboard/requests/material/${requisition.id}`)}
@@ -330,6 +437,17 @@ const MaterialRequisitionsPage = () => {
                             >
                               <Trash2 size={18} />
                             </button>
+                            <select
+                              value={selectedStatuses[requisition.id] || requisition.status}
+                              onChange={(e) => handleStatusChange(requisition.id, e.target.value)}
+                              className="text-sm border rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-orange-500"
+                            >
+                              <option value="to_accept">Do akceptacji</option>
+                              <option value="accepted">Zaakceptowano</option>
+                              <option value="in_progress">W trakcie realizacji</option>
+                              <option value="completed">Zrealizowano</option>
+                              <option value="rejected">Odrzucono</option>
+                            </select>
                           </div>
                         </td>
                       </tr>

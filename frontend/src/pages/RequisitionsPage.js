@@ -1,10 +1,11 @@
 // frontend/src/pages/RequisitionsPage.js
-import React, { useState } from 'react';
+import React from 'react';
 import { Routes, Route, useNavigate } from 'react-router-dom';
 import {
   Server,
   Users,
-  ChevronRight
+  ChevronRight,
+  Eye
 } from 'lucide-react';
 import MaterialRequisitionsPage from './MaterialRequisitionsPage';
 import HRRequisitionsPage from './HRRequisitionsPage';

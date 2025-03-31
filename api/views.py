@@ -339,26 +339,24 @@ class RequisitionViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         """Filtruj zapotrzebowania z obsługą wyszukiwania po przedmiotach"""
-        queryset = Requisition.objects.all()
+        queryset = Requisition.objects.all().order_by('-created_at')
 
         # Filtruj po typie zapotrzebowania
         requisition_type = self.request.query_params.get('requisition_type', None)
         if requisition_type:
             queryset = queryset.filter(requisition_type=requisition_type)
 
-        # Filtruj po frazie wyszukiwania (w numerze, projekcie, przedmiotach)
+        # Filtruj po frazie wyszukiwania
         search_term = self.request.query_params.get('search', None)
         if search_term:
             # Wyszukiwanie w podstawowych polach zapotrzebowania
             basic_search = Q(number__icontains=search_term) | \
-                          Q(comment__icontains=search_term)
+                           Q(comment__icontains=search_term)
 
             # Dodaj wyszukiwanie w polach powiązanego projektu
             basic_search |= Q(project__name__icontains=search_term)
 
             # Wyszukiwanie w przedmiotach zapotrzebowania
-            # Znajdź ID zapotrzebowań, które mają powiązane przedmioty pasujące do wyszukiwania
-            # Musimy znaleźć te zapotrzebowania, które mają powiązane przedmioty pasujące do frazy
             items_search = RequisitionItem.objects.filter(
                 Q(item__name__icontains=search_term) |
                 Q(item__index__icontains=search_term)
@@ -367,96 +365,99 @@ class RequisitionViewSet(viewsets.ModelViewSet):
             # Łączymy oba warunki - podstawowe pola lub powiązane przedmioty
             queryset = queryset.filter(basic_search | Q(id__in=items_search))
 
-        return queryset.distinct().order_by('-created_at')
+        return queryset.distinct()
 
     def perform_create(self, serializer):
         """
         Modyfikacja procesu tworzenia zapotrzebowania,
         obsługująca wymuszenie nowego numeru
         """
-        # Sprawdź, czy wymuszono nowy numer
-        force_new_number = self.request.data.get('force_new_number', False)
+        requisition = serializer.save(
+            created_by=self.request.user,
+            updated_by=self.request.user
+        )
 
-        if force_new_number:
-            # Logika dla wymuszenia nowego numeru
-            today = datetime.date.today()
-            year = today.year
-            month = today.month
-            day = today.day
-
-            # Prefiks numeru zapotrzebowania dla dzisiejszego dnia
-            prefix = f"ZAP/{year}/{month:02d}/{day:02d}/"
-
-            # Znajdź zapotrzebowania z tym samym prefiksem (tego samego dnia)
-            today_requisitions = Requisition.objects.filter(
-                number__startswith=prefix
-            )
-
-            # Znajdź najwyższy numer
-            max_number = 0
-            for req in today_requisitions:
-                try:
-                    # Wyciągnij numer z końca (po ostatnim "/")
-                    num = int(req.number.split('/')[-1])
-                    if num > max_number:
-                        max_number = num
-                except (ValueError, IndexError):
-                    pass
-
-            # Ustaw nowy numer jako najwyższy + 1
-            custom_number = f"{prefix}{max_number + 1}"
-
-            # Zapisz z wymuszonym numerem
-            requisition = serializer.save(created_by=self.request.user, updated_by=self.request.user, number=custom_number)
-        else:
-            # Standardowe zapisywanie
-            requisition = serializer.save(created_by=self.request.user, updated_by=self.request.user)
-
-        send_requisition_notification(requisition)
+        # Wysyłanie powiadomienia e-mail
+        try:
+            send_requisition_notification(requisition)
+        except Exception as e:
+            # Log błędu, ale nie przerywaj procesu
+            logging.error(f"Błąd wysyłania powiadomienia: {e}")
 
     def perform_update(self, serializer):
-        """Obsługa aktualizacji zapotrzebowania, z większą ilością logów dla debugowania"""
-        # Zapisz dane przed aktualizacją
+        """
+        Obsługa aktualizacji zapotrzebowania z dodatkową walidacją
+        """
+        # Pobierz aktualny stan przed aktualizacją
         instance = self.get_object()
         old_status = instance.status
 
-        # Zaloguj dane przychodzące w żądaniu
-        print(f"PATCH - Update request received for requisition {instance.id}: {self.request.data}")
+        # Zaktualizuj zapotrzebowanie
+        updated_instance = serializer.save(
+            updated_by=self.request.user
+        )
 
-        # Aktualizuj z dokumentowaniem zmian
-        updated_instance = serializer.save(updated_by=self.request.user)
+        # Dodaj logowanie zmian
+        logging.info(f"Zmiana statusu zapotrzebowania {instance.id}: {old_status} -> {updated_instance.status}")
 
-        # Zaloguj zmiany po aktualizacji
-        print(f"Status change for requisition {instance.id}: {old_status} -> {updated_instance.status}")
-
-        # Jeśli zmienił się status, wykonaj dodatkowe operacje
+        # Opcjonalnie: wyślij powiadomienie o zmianie statusu
         if old_status != updated_instance.status:
-            print(f"Status został zmieniony z {old_status} na {updated_instance.status}")
-            # Tutaj można dodać dodatkową logikę związaną ze zmianą statusu
-
-        return updated_instance
-
-    def update(self, request, *args, **kwargs):
-        """Nadpisana metoda update z dodatkowymi logami dla PATCH/PUT"""
-        print(f"PATCH/PUT - Update requisition request received: {request.data}")
-
-        # Wywołaj oryginalną metodę update
-        response = super().update(request, *args, **kwargs)
-
-        print(f"Update requisition response: {response.data}")
-
-        return response
+            try:
+                # Możesz zdefiniować osobną funkcję wysyłania powiadomień o zmianie statusu
+                send_status_change_notification(updated_instance)
+            except Exception as e:
+                logging.error(f"Błąd wysyłania powiadomienia o zmianie statusu: {e}")
 
     def partial_update(self, request, *args, **kwargs):
-        """Nadpisana metoda partial_update z dodatkowymi logami dla PATCH"""
-        print(f"PATCH - Partial update requisition request received: {request.data}")
+        """
+        Nadpisana metoda częściowej aktualizacji z dodatkową obsługą błędów
+        """
+        kwargs['partial'] = True
+        try:
+            return super().partial_update(request, *args, **kwargs)
+        except Exception as e:
+            logging.error(f"Błąd aktualizacji zapotrzebowania: {e}")
+            return Response(
+                {'detail': 'Nie udało się zaktualizować zapotrzebowania.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
-        # Wywołaj oryginalną metodę partial_update
-        response = super().partial_update(request, *args, **kwargs)
+    @action(detail=True, methods=['patch'])
+    def change_status(self, request, pk=None):
+        """
+        Dedykowany endpoint do zmiany statusu
+        """
+        try:
+            requisition = self.get_object()
+            new_status = request.data.get('status')
 
-        print(f"Partial update requisition response: {response.data}")
+            if not new_status:
+                return Response(
+                    {'detail': 'Status jest wymagany'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
 
-        return response
+            valid_statuses = [status[0] for status in Requisition.REQUISITION_STATUS_CHOICES]
+
+            if new_status not in valid_statuses:
+                return Response(
+                    {'detail': 'Nieprawidłowy status'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            requisition.status = new_status
+            requisition.updated_by = request.user
+            requisition.save()
+
+            serializer = self.get_serializer(requisition)
+            return Response(serializer.data)
+
+        except Exception as e:
+            logging.error(f"Błąd zmiany statusu: {e}")
+            return Response(
+                {'detail': 'Nie udało się zmienić statusu'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 class RequisitionItemViewSet(viewsets.ModelViewSet):
     """API endpoint dla pozycji zapotrzebowań"""

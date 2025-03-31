@@ -231,28 +231,55 @@ class RequisitionSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Requisition
-        fields = ('id', 'number', 'project', 'project_name', 'deadline', 'requisition_type', 'type_display',
-                 'status', 'status_display', 'comment', 'items', 'total_price', 'created_at', 'updated_at',
-                 'created_by', 'created_by_name', 'updated_by', 'updated_by_name')
+        fields = ('id', 'number', 'project', 'project_name', 'deadline',
+                  'requisition_type', 'type_display', 'status', 'status_display',
+                  'comment', 'items', 'total_price', 'created_at', 'updated_at',
+                  'created_by', 'created_by_name', 'updated_by', 'updated_by_name')
         read_only_fields = ('id', 'number', 'created_at', 'updated_at', 'created_by', 'updated_by')
+        extra_kwargs = {
+            'status': {
+                'validators': []  # Usuń domyślne walidatory
+            }
+        }
+
+    def validate_status(self, value):
+        """
+        Niestandardowa walidacja statusu
+        Sprawdza, czy podany status jest dozwolony
+        """
+        valid_statuses = [status[0] for status in Requisition.REQUISITION_STATUS_CHOICES]
+
+        if value not in valid_statuses:
+            raise serializers.ValidationError(f"Niedozwolony status: {value}")
+
+        return value
 
     def get_created_by_name(self, obj):
-        if obj.created_by:
-            return f"{obj.created_by.first_name} {obj.created_by.last_name}".strip() or obj.created_by.username
-        return None
+        return obj.created_by.get_full_name() if obj.created_by else '-'
 
     def get_updated_by_name(self, obj):
-        if obj.updated_by:
-            return f"{obj.updated_by.first_name} {obj.updated_by.last_name}".strip() or obj.updated_by.username
-        return None
+        return obj.updated_by.get_full_name() if obj.updated_by else '-'
 
     def get_project_name(self, obj):
         return obj.project.name if obj.project else None
 
     def get_total_price(self, obj):
-        total = sum(item.price * item.quantity for item in obj.items.all() if item.price is not None)
+        """
+        Oblicza całkowitą wartość zapotrzebowania
+        """
+        total = sum(
+            item.price * item.quantity
+            for item in obj.items.all()
+            if item.price is not None
+        )
         return float(total)
 
     def get_status_display(self, obj):
-        status_map = dict(self.Meta.model.REQUISITION_STATUS_CHOICES)
+        status_map = {
+            'to_accept': 'Do akceptacji',
+            'accepted': 'Zaakceptowano',
+            'rejected': 'Odrzucono',
+            'in_progress': 'W trakcie realizacji',
+            'completed': 'Zrealizowano'
+        }
         return status_map.get(obj.status, obj.status)
