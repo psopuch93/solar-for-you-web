@@ -50,51 +50,69 @@ const WarehouseRequisitionDetailsPage = () => {
     }
   };
 
-  const handleStatusChange = async (newStatus) => {
-    const statusLabels = {
-      'to_accept': 'Do akceptacji',
-      'accepted': 'Zaakceptowano',
-      'rejected': 'Odrzucono',
-      'in_progress': 'W trakcie realizacji',
-      'completed': 'Zrealizowano'
-    };
-
-    confirmDialog(
-      `Czy chcesz zmienić status zapotrzebowania na "${statusLabels[newStatus]}"?`,
-      async () => {
-        try {
-          setLoading(true);
-          const response = await fetch(`/api/requisitions/${id}/`, {
-            method: 'PATCH',
-            headers: {
-              'Content-Type': 'application/json',
-              'X-CSRFToken': getCsrfToken(),
-            },
-            body: JSON.stringify({ status: newStatus }),
-            credentials: 'same-origin',
-          });
-
-          if (!response.ok) {
-            throw new Error('Błąd aktualizacji statusu');
-          }
-
-          // Aktualizuj lokalny stan
-          setRequisition(prev => ({
-            ...prev,
-            status: newStatus
-          }));
-
-          // Odśwież globalny kontekst zapotrzebowań
-          refreshRequisitions();
-        } catch (err) {
-          console.error('Błąd:', err);
-          setError('Nie udało się zaktualizować statusu. Spróbuj ponownie później.');
-        } finally {
-          setLoading(false);
-        }
-      }
-    );
+const handleStatusChange = async (newStatus) => {
+  const statusLabels = {
+    'to_accept': 'Do akceptacji',
+    'accepted': 'Zaakceptowano',
+    'rejected': 'Odrzucono',
+    'in_progress': 'W trakcie realizacji',
+    'completed': 'Zrealizowano'
   };
+
+  confirmDialog(
+    `Czy chcesz zmienić status zapotrzebowania na "${statusLabels[newStatus]}"?`,
+    async () => {
+      try {
+        setLoading(true);
+
+        // Pobierz token CSRF przed wysłaniem żądania
+        const csrfToken = getCsrfToken();
+
+        const response = await fetch(`/api/requisitions/${id}/`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': csrfToken,
+          },
+          body: JSON.stringify({ status: newStatus }),
+          credentials: 'same-origin',
+        });
+
+        let responseData;
+        try {
+          responseData = await response.json();
+        } catch (jsonError) {
+          console.error('Błąd parsowania odpowiedzi JSON:', jsonError);
+          responseData = {};
+        }
+
+        if (!response.ok) {
+          throw new Error(`Błąd aktualizacji statusu: ${response.status} ${JSON.stringify(responseData)}`);
+        }
+
+        console.log('Odpowiedź serwera po zmianie statusu:', responseData);
+
+        // Aktualizuj lokalny stan
+        setRequisition(prev => ({
+          ...prev,
+          status: newStatus
+        }));
+
+        // Odśwież globalny kontekst zapotrzebowań
+        refreshRequisitions();
+
+        // Ponownie pobierz dane zapotrzebowania, aby upewnić się że mamy aktualne dane
+        await fetchRequisition();
+
+      } catch (err) {
+        console.error('Błąd:', err);
+        setError('Nie udało się zaktualizować statusu. Spróbuj ponownie później.');
+      } finally {
+        setLoading(false);
+      }
+    }
+  );
+};
 
   const getStatusIcon = (status) => {
     switch(status) {

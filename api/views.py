@@ -9,6 +9,7 @@ from django.contrib.auth import authenticate, login
 from django.contrib.auth.models import User
 from .utils.email_utils import send_requisition_notification
 from django.db.models import Q
+from django.utils.decorators import method_decorator
 import datetime
 import json
 from .models import UserProfile, Project, Client, ProjectTag, Employee, Empl_tag, Requisition, Item, RequisitionItem
@@ -327,6 +328,8 @@ class ItemViewSet(viewsets.ModelViewSet):
     def perform_update(self, serializer):
         serializer.save(updated_by=self.request.user)
 
+
+@method_decorator(ensure_csrf_cookie, name='dispatch')
 class RequisitionViewSet(viewsets.ModelViewSet):
     """API endpoint dla zapotrzebowań"""
     queryset = Requisition.objects.all()
@@ -412,7 +415,48 @@ class RequisitionViewSet(viewsets.ModelViewSet):
         send_requisition_notification(requisition)
 
     def perform_update(self, serializer):
-        serializer.save(updated_by=self.request.user)
+        """Obsługa aktualizacji zapotrzebowania, z większą ilością logów dla debugowania"""
+        # Zapisz dane przed aktualizacją
+        instance = self.get_object()
+        old_status = instance.status
+
+        # Zaloguj dane przychodzące w żądaniu
+        print(f"PATCH - Update request received for requisition {instance.id}: {self.request.data}")
+
+        # Aktualizuj z dokumentowaniem zmian
+        updated_instance = serializer.save(updated_by=self.request.user)
+
+        # Zaloguj zmiany po aktualizacji
+        print(f"Status change for requisition {instance.id}: {old_status} -> {updated_instance.status}")
+
+        # Jeśli zmienił się status, wykonaj dodatkowe operacje
+        if old_status != updated_instance.status:
+            print(f"Status został zmieniony z {old_status} na {updated_instance.status}")
+            # Tutaj można dodać dodatkową logikę związaną ze zmianą statusu
+
+        return updated_instance
+
+    def update(self, request, *args, **kwargs):
+        """Nadpisana metoda update z dodatkowymi logami dla PATCH/PUT"""
+        print(f"PATCH/PUT - Update requisition request received: {request.data}")
+
+        # Wywołaj oryginalną metodę update
+        response = super().update(request, *args, **kwargs)
+
+        print(f"Update requisition response: {response.data}")
+
+        return response
+
+    def partial_update(self, request, *args, **kwargs):
+        """Nadpisana metoda partial_update z dodatkowymi logami dla PATCH"""
+        print(f"PATCH - Partial update requisition request received: {request.data}")
+
+        # Wywołaj oryginalną metodę partial_update
+        response = super().partial_update(request, *args, **kwargs)
+
+        print(f"Partial update requisition response: {response.data}")
+
+        return response
 
 class RequisitionItemViewSet(viewsets.ModelViewSet):
     """API endpoint dla pozycji zapotrzebowań"""
@@ -458,6 +502,7 @@ class RequisitionItemViewSet(viewsets.ModelViewSet):
         return response
 
 @api_view(['POST'])
+@ensure_csrf_cookie
 @permission_classes([permissions.IsAuthenticated])
 def validate_requisition(request):
     """Walidacja zapotrzebowania przed zapisem"""

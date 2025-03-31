@@ -95,97 +95,79 @@ const WarehouseRequisitionsPage = () => {
   };
 
   const changeRequisitionStatus = async (requisitionId, newStatus) => {
-    try {
-      setLoading(true);
-      console.log(`Próba zmiany statusu dla ${requisitionId} na ${newStatus}`);
-
-      // Pobierz aktualny token CSRF
-      const csrfToken = getCsrfToken();
-      console.log('Token CSRF:', csrfToken);
-
-      const requestBody = JSON.stringify({ status: newStatus });
-      console.log('Wysyłane dane:', requestBody);
-
-      const response = await fetch(`/api/requisitions/${requisitionId}/`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-CSRFToken': csrfToken,
-        },
-        body: requestBody,
-        credentials: 'same-origin',
-      });
-
-      console.log('Kod statusu odpowiedzi:', response.status);
-      const responseText = await response.text();
-      console.log('Odpowiedź serwera:', responseText);
-
-      // Próba analizy odpowiedzi jako JSON
-      let responseData;
       try {
-        if (responseText) {
-          responseData = JSON.parse(responseText);
-          console.log('Dane odpowiedzi (JSON):', responseData);
+        setLoading(true);
+        console.log(`Zmiana statusu dla ${requisitionId} na ${newStatus}`);
+
+        // Pobierz aktualny token CSRF
+        const csrfToken = getCsrfToken();
+
+        const response = await fetch(`/api/requisitions/${requisitionId}/`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': csrfToken,
+          },
+          body: JSON.stringify({ status: newStatus }),
+          credentials: 'same-origin',
+        });
+
+        // Ważne: zaczekaj na pełną odpowiedź przed kontynuowaniem
+        const responseData = await response.json();
+
+        if (!response.ok) {
+          throw new Error(`Błąd serwera: ${response.status} ${JSON.stringify(responseData)}`);
         }
-      } catch (e) {
-        console.error('Błąd parsowania JSON:', e);
-      }
 
-      if (!response.ok) {
-        throw new Error(`Błąd serwera: ${response.status} ${responseText}`);
-      }
+        console.log('Status zaktualizowany pomyślnie:', responseData);
 
-      // Lokalne zaktualizowanie stanu - natychmiast po udanym żądaniu
-      console.log('Aktualizacja stanu lokalnego po zmienie statusu');
+        // Aktualizuj listę wszystkich zapotrzebowań
+        setAllRequisitions(prevReqs =>
+          prevReqs.map(req =>
+            req.id === requisitionId ? {
+              ...req,
+              status: newStatus
+            } : req
+          )
+        );
 
-      // Aktualizuj listę wszystkich zapotrzebowań
-      setAllRequisitions(prevReqs =>
-        prevReqs.map(req =>
-          req.id === requisitionId ? {
-            ...req,
-            status: newStatus
-          } : req
-        )
-      );
+        // Aktualizuj szczegóły, jeśli są załadowane
+        if (requisitionDetails[requisitionId]) {
+          setRequisitionDetails(prev => ({
+            ...prev,
+            [requisitionId]: {
+              ...prev[requisitionId],
+              status: newStatus
+            }
+          }));
+        }
 
-      // Aktualizuj szczegóły, jeśli są załadowane
-      if (requisitionDetails[requisitionId]) {
-        setRequisitionDetails(prev => ({
+        // Aktualizuj stan selecta
+        setSelectedStatuses(prev => ({
           ...prev,
-          [requisitionId]: {
-            ...prev[requisitionId],
-            status: newStatus
-          }
+          [requisitionId]: newStatus
         }));
+
+        // Odśwież dane z serwera po zmianie
+        await fetchAllRequisitions();
+        refreshRequisitions();
+
+        return true;
+      } catch (err) {
+        console.error('Błąd podczas zmiany statusu:', err);
+        alert(`Błąd podczas zmiany statusu: ${err.message}`);
+
+        // Przywróć poprzedni status w UI
+        setSelectedStatuses(prev => ({
+          ...prev,
+          [requisitionId]: allRequisitions.find(req => req.id === requisitionId)?.status || 'to_accept'
+        }));
+
+        return false;
+      } finally {
+        setLoading(false);
       }
-
-      // Aktualizuj stan selecta
-      setSelectedStatuses(prev => ({
-        ...prev,
-        [requisitionId]: newStatus
-      }));
-
-      // Najważniejsze - odśwież dane z serwera po zmianie
-      console.log('Odświeżanie danych z serwera...');
-      await fetchAllRequisitions();
-      refreshRequisitions();
-      console.log('Odświeżanie danych zakończone');
-
-      return true;
-    } catch (err) {
-      console.error('Błąd podczas zmiany statusu:', err);
-      alert(`Błąd podczas zmiany statusu: ${err.message}`);
-
-      // Przywróć poprzedni status w UI
-      setSelectedStatuses(prev => ({
-        ...prev,
-        [requisitionId]: allRequisitions.find(req => req.id === requisitionId)?.status || 'to_accept'
-      }));
-      return false;
-    } finally {
-      setLoading(false);
     }
-  };
 
   const handleStatusChange = (requisitionId, newStatus) => {
     const statusLabels = {
