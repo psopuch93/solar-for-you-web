@@ -3,6 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Dashboard from './pages/Dashboard';
 import LoginPage from './pages/LoginPage';
+import { DialogProvider } from './contexts/DialogContext';
 import './App.css';
 
 function App() {
@@ -42,23 +43,25 @@ function App() {
   }
 
   return (
-    <Router>
-      <Routes>
-        <Route
-          path="/"
-          element={isAuthenticated ? <Navigate to="/dashboard" /> : <LoginPage setIsAuthenticated={setIsAuthenticated} />}
-        />
-        <Route
-          path="/dashboard/*"
-          element={isAuthenticated ? <Dashboard setIsAuthenticated={setIsAuthenticated} /> : <Navigate to="/" />}
-        />
-        {/* Każdy inny URL, dla którego nie ma dopasowania przekierowuje na /dashboard */}
-        <Route
-          path="*"
-          element={<Navigate to={isAuthenticated ? "/dashboard" : "/"} />}
-        />
-      </Routes>
-    </Router>
+    <DialogProvider>
+      <Router>
+        <Routes>
+          <Route
+            path="/"
+            element={isAuthenticated ? <Navigate to="/dashboard" /> : <LoginPage setIsAuthenticated={setIsAuthenticated} />}
+          />
+          <Route
+            path="/dashboard/*"
+            element={isAuthenticated ? <Dashboard setIsAuthenticated={setIsAuthenticated} /> : <Navigate to="/" />}
+          />
+          {/* Każdy inny URL, dla którego nie ma dopasowania przekierowuje na /dashboard */}
+          <Route
+            path="*"
+            element={<Navigate to={isAuthenticated ? "/dashboard" : "/"} />}
+          />
+        </Routes>
+      </Router>
+    </DialogProvider>
   );
 }
 

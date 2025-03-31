@@ -242,10 +242,12 @@ class Requisition(models.Model):
     deadline = models.DateField(verbose_name="Termin realizacji")
     requisition_type = models.CharField(max_length=20, choices=TYPE_CHOICES, default='material', verbose_name="Typ zapotrzebowania")
     status = models.CharField(max_length=20, choices=REQUISITION_STATUS_CHOICES, default='to_accept', verbose_name="Status")
+    comment = models.TextField(blank=True, null=True, verbose_name="Komentarz")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Data utworzenia")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Data aktualizacji")
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='created_requisitions', verbose_name="Utworzony przez")
     updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='updated_requisitions', verbose_name="Zaktualizowany przez")
+    email_sent = models.BooleanField(default=False, verbose_name="E-mail wysłany")
 
     def __str__(self):
         return f"{self.number} - {self.project.name if self.project else 'Brak projektu'}"
@@ -258,15 +260,27 @@ class Requisition(models.Model):
             month = today.month
             day = today.day
 
-            # Pobierz liczbę zapotrzebowań z dzisiejszego dnia
-            today_requisitions = Requisition.objects.filter(
-                created_at__year=year,
-                created_at__month=month,
-                created_at__day=day
-            ).count()
+            # Prefiks numeru zapotrzebowania dla dzisiejszego dnia
+            prefix = f"ZAP/{year}/{month:02d}/{day:02d}/"
 
-            # Generuj numer
-            self.number = f"ZAP/{year}/{month:02d}/{day:02d}/{today_requisitions + 1}"
+            # Znajdź zapotrzebowania z tym samym prefiksem (tego samego dnia)
+            today_requisitions = Requisition.objects.filter(
+                number__startswith=prefix
+            )
+
+            # Znajdź najwyższy numer
+            max_number = 0
+            for req in today_requisitions:
+                try:
+                    # Wyciągnij numer z końca (po ostatnim "/")
+                    num = int(req.number.split('/')[-1])
+                    if num > max_number:
+                        max_number = num
+                except (ValueError, IndexError):
+                    pass
+
+            # Ustaw nowy numer jako najwyższy + 1
+            self.number = f"{prefix}{max_number + 1}"
 
         super().save(*args, **kwargs)
 

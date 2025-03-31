@@ -7,7 +7,9 @@ from django.shortcuts import render, redirect
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth import authenticate, login
 from django.contrib.auth.models import User
+from .utils.email_utils import send_requisition_notification
 from django.db.models import Q
+import datetime
 import json
 from .models import UserProfile, Project, Client, ProjectTag, Employee, Empl_tag, Requisition, Item, RequisitionItem
 from .serializers import (
@@ -333,17 +335,81 @@ class RequisitionViewSet(viewsets.ModelViewSet):
     required_privilege = 'manage_requisitions'
 
     def get_queryset(self):
-        """Filtruj zapotrzebowania"""
-        requisition_type = self.request.query_params.get('requisition_type', None)
+        """Filtruj zapotrzebowania z obsługą wyszukiwania po przedmiotach"""
         queryset = Requisition.objects.all()
 
+        # Filtruj po typie zapotrzebowania
+        requisition_type = self.request.query_params.get('requisition_type', None)
         if requisition_type:
             queryset = queryset.filter(requisition_type=requisition_type)
 
-        return queryset
+        # Filtruj po frazie wyszukiwania (w numerze, projekcie, przedmiotach)
+        search_term = self.request.query_params.get('search', None)
+        if search_term:
+            # Wyszukiwanie w podstawowych polach zapotrzebowania
+            basic_search = Q(number__icontains=search_term) | \
+                          Q(comment__icontains=search_term)
+
+            # Dodaj wyszukiwanie w polach powiązanego projektu
+            basic_search |= Q(project__name__icontains=search_term)
+
+            # Wyszukiwanie w przedmiotach zapotrzebowania
+            # Znajdź ID zapotrzebowań, które mają powiązane przedmioty pasujące do wyszukiwania
+            # Musimy znaleźć te zapotrzebowania, które mają powiązane przedmioty pasujące do frazy
+            items_search = RequisitionItem.objects.filter(
+                Q(item__name__icontains=search_term) |
+                Q(item__index__icontains=search_term)
+            ).values_list('requisition_id', flat=True).distinct()
+
+            # Łączymy oba warunki - podstawowe pola lub powiązane przedmioty
+            queryset = queryset.filter(basic_search | Q(id__in=items_search))
+
+        return queryset.distinct().order_by('-created_at')
 
     def perform_create(self, serializer):
-        serializer.save(created_by=self.request.user, updated_by=self.request.user)
+        """
+        Modyfikacja procesu tworzenia zapotrzebowania,
+        obsługująca wymuszenie nowego numeru
+        """
+        # Sprawdź, czy wymuszono nowy numer
+        force_new_number = self.request.data.get('force_new_number', False)
+
+        if force_new_number:
+            # Logika dla wymuszenia nowego numeru
+            today = datetime.date.today()
+            year = today.year
+            month = today.month
+            day = today.day
+
+            # Prefiks numeru zapotrzebowania dla dzisiejszego dnia
+            prefix = f"ZAP/{year}/{month:02d}/{day:02d}/"
+
+            # Znajdź zapotrzebowania z tym samym prefiksem (tego samego dnia)
+            today_requisitions = Requisition.objects.filter(
+                number__startswith=prefix
+            )
+
+            # Znajdź najwyższy numer
+            max_number = 0
+            for req in today_requisitions:
+                try:
+                    # Wyciągnij numer z końca (po ostatnim "/")
+                    num = int(req.number.split('/')[-1])
+                    if num > max_number:
+                        max_number = num
+                except (ValueError, IndexError):
+                    pass
+
+            # Ustaw nowy numer jako najwyższy + 1
+            custom_number = f"{prefix}{max_number + 1}"
+
+            # Zapisz z wymuszonym numerem
+            requisition = serializer.save(created_by=self.request.user, updated_by=self.request.user, number=custom_number)
+        else:
+            # Standardowe zapisywanie
+            requisition = serializer.save(created_by=self.request.user, updated_by=self.request.user)
+
+        send_requisition_notification(requisition)
 
     def perform_update(self, serializer):
         serializer.save(updated_by=self.request.user)

@@ -1,3 +1,4 @@
+// frontend/src/components/MaterialRequisitionForm.js
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
@@ -13,23 +14,27 @@ import {
 } from 'lucide-react';
 import { getCsrfToken } from '../utils/csrfToken';
 import { useProjects } from '../contexts/ProjectContext';
+import { useRequisitions } from '../contexts/RequisitionContext';
 
 const MaterialRequisitionForm = ({ mode = 'view' }) => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { projects } = useProjects();
+  const { refreshRequisitions } = useRequisitions();
 
   const [requisition, setRequisition] = useState({
     project: '',
     deadline: '',
     requisition_type: 'material',
     status: 'to_accept',
+    comment: '',
     items: []
   });
 
   const [availableProjects, setAvailableProjects] = useState([]);
   const [availableItems, setAvailableItems] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const [isEditing, setIsEditing] = useState(mode === 'create' || mode === 'edit');
 
@@ -45,11 +50,19 @@ const MaterialRequisitionForm = ({ mode = 'view' }) => {
   useEffect(() => {
     if (id && (mode === 'view' || mode === 'edit')) {
       fetchRequisition();
+    } else {
+      setLoading(false);
     }
 
     // Ładuj listę projektów i przedmiotów
     fetchProjects();
     fetchItems();
+
+    // Efekt cleanup
+    return () => {
+      // Zmniejszamy ryzyko równoczesnych zapytań przy zmianie widoku
+      setLoading(false);
+    };
   }, [id, mode]);
 
   // Obserwuj listę projektów z kontekstu
@@ -71,6 +84,34 @@ const MaterialRequisitionForm = ({ mode = 'view' }) => {
       }
 
       const data = await response.json();
+
+      // Upewniamy się, że przedmioty są poprawnie załadowane
+      if (!data.items || !Array.isArray(data.items)) {
+        // Jeśli nie ma przedmiotów, próbujemy je pobrać osobno
+        try {
+          const itemsResponse = await fetch(`/api/requisition-items/?requisition=${id}`, {
+            credentials: 'same-origin',
+          });
+
+          if (itemsResponse.ok) {
+            const itemsData = await itemsResponse.json();
+            // Dodaj informacje o przedmiotach
+            if (Array.isArray(itemsData)) {
+              data.items = itemsData;
+            }
+          }
+        } catch (itemErr) {
+          console.error('Błąd pobierania przedmiotów:', itemErr);
+          // Kontynuujemy mimo błędu
+        }
+      }
+
+      // Upewnij się, że items zawsze istnieje jako tablica
+      if (!data.items) {
+        data.items = [];
+      }
+
+      console.log("Pobrane zapotrzebowanie:", data);
       setRequisition(data);
       setError(null);
     } catch (err) {
@@ -150,10 +191,12 @@ const MaterialRequisitionForm = ({ mode = 'view' }) => {
       return;
     }
 
-    // Walidacja ceny
-    const finalPrice = itemPrice || selectedItem.price;
-    if (!finalPrice || parseFloat(finalPrice) <= 0) {
-      setError('Cena musi być dodatnia');
+    // Walidacja ceny - sprawdzamy czy jest cena wprowadzona lub domyślna
+    const finalPrice = itemPrice !== "" ? itemPrice : selectedItem.price;
+
+    if (finalPrice === undefined || finalPrice === null || finalPrice === "" || parseFloat(finalPrice) <= 0) {
+      // Podświetlamy pole ceną i pokazujemy błąd
+      setError('Cena jest wymagana i musi być większa od zera');
       return;
     }
 
@@ -161,9 +204,11 @@ const MaterialRequisitionForm = ({ mode = 'view' }) => {
       item: selectedItem.id,
       item_name: selectedItem.name,
       item_index: selectedItem.index,
-      quantity: itemQuantity,
+      quantity: parseInt(itemQuantity) || 1, // Upewniamy się, że mamy liczbę całkowitą
       price: parseFloat(finalPrice)
     };
+
+    console.log("Dodawany przedmiot:", newItem);
 
     if (currentItemIndex !== null) {
       // Edycja istniejącego elementu
@@ -185,67 +230,173 @@ const MaterialRequisitionForm = ({ mode = 'view' }) => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setError(null);
 
     try {
-      // Walidacja na froncie
-      const validationResponse = await fetch('/api/validate-requisition/', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-CSRFToken': getCsrfToken(),
-        },
-        body: JSON.stringify(requisition),
-        credentials: 'same-origin',
-      });
+      setSubmitting(true);
 
-      const validationResult = await validationResponse.json();
-      if (!validationResult.valid) {
-        setError(validationResult.message);
+      // Podstawowa walidacja przed wysłaniem
+      if (!requisition.project) {
+        setError('Wybierz projekt');
+        setSubmitting(false);
         return;
       }
 
-      setLoading(true);
+      if (!requisition.deadline) {
+        setError('Wybierz termin realizacji');
+        setSubmitting(false);
+        return;
+      }
 
+      if (requisition.items.length === 0) {
+        setError('Dodaj co najmniej jedną pozycję zapotrzebowania');
+        setSubmitting(false);
+        return;
+      }
+
+      // Przygotuj dane zapotrzebowania (bez przedmiotów)
+      const requisitionData = {
+        project: requisition.project,
+        deadline: requisition.deadline,
+        requisition_type: requisition.requisition_type,
+        status: requisition.status,
+        comment: requisition.comment || ''
+      };
+
+      // Określamy ścieżkę odpowiednio do trybu
+      let url = '/api/requisitions/';
+      let method = 'POST';
+
+      if (mode === 'edit') {
+        url = `/api/requisitions/${id}/`;
+        method = 'PATCH';
+      }
+
+      // Krok 1: Zapisz główne zapotrzebowanie
       let response;
-      const requisitionData = { ...requisition };
+      try {
+        response = await fetch(url, {
+          method: method,
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken(),
+          },
+          body: JSON.stringify(requisitionData),
+          credentials: 'same-origin',
+        });
 
-      if (mode === 'create') {
-        // Tworzenie nowego zapotrzebowania
-        response = await fetch('/api/requisitions/', {
+        if (!response.ok) {
+          const errorData = await response.json();
+
+          // Obsługa błędu unikalności numeru
+          if (errorData.detail && errorData.detail.includes("already exists")) {
+            throw new Error("Numer zapotrzebowania jest już zajęty. System spróbuje ponownie z innym numerem.");
+          }
+
+          throw new Error(errorData.detail || 'Błąd zapisu zapotrzebowania');
+        }
+      } catch (err) {
+        // Jeśli to błąd unikalności numeru, spróbuj ponownie z dodatkowym parametrem
+        if (err.message.includes("Numer zapotrzebowania jest już zajęty")) {
+          console.warn("Próba ponownego zapisu z wymuszeniem nowego numeru...");
+
+          // Dodaj parametr do wymuszenia generacji nowego numeru
+          const retryData = {
+            ...requisitionData,
+            force_new_number: true
+          };
+
+          response = await fetch(url, {
+            method: method,
+            headers: {
+              'Content-Type': 'application/json',
+              'X-CSRFToken': getCsrfToken(),
+            },
+            body: JSON.stringify(retryData),
+            credentials: 'same-origin',
+          });
+
+          if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || 'Błąd zapisu zapotrzebowania po powtórnej próbie');
+          }
+        } else {
+          // Inny błąd, przekaż dalej
+          throw err;
+        }
+      }
+
+      // Pobierz zapisane zapotrzebowanie, aby uzyskać jego ID
+      const savedRequisition = await response.json();
+      const requisitionId = savedRequisition.id || id;
+
+      // Krok 2: Jeśli jesteśmy w trybie edycji, usuń najpierw wszystkie istniejące przedmioty
+      if (mode === 'edit') {
+        // Pobieramy aktualne przedmioty
+        const currentItemsResponse = await fetch(`/api/requisitions/${requisitionId}/`, {
+          credentials: 'same-origin',
+        });
+
+        if (currentItemsResponse.ok) {
+          const currentData = await currentItemsResponse.json();
+
+          // Usuwamy istniejące przedmioty
+          if (currentData.items && currentData.items.length > 0) {
+            for (const item of currentData.items) {
+              if (item.id) {
+                await fetch(`/api/requisition-items/${item.id}/`, {
+                  method: 'DELETE',
+                  headers: {
+                    'X-CSRFToken': getCsrfToken(),
+                  },
+                  credentials: 'same-origin',
+                });
+              }
+            }
+          }
+        }
+      }
+
+      // Krok 3: Dodaj wszystkie przedmioty pojedynczo
+      for (const item of requisition.items) {
+        const itemData = {
+          requisition: requisitionId,
+          item: item.item,
+          quantity: item.quantity,
+          price: parseFloat(item.price)
+        };
+
+        const itemResponse = await fetch('/api/requisition-items/', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'X-CSRFToken': getCsrfToken(),
           },
-          body: JSON.stringify(requisitionData),
+          body: JSON.stringify(itemData),
           credentials: 'same-origin',
         });
-      } else {
-        // Aktualizacja istniejącego zapotrzebowania
-        response = await fetch(`/api/requisitions/${id}/`, {
-          method: 'PATCH',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-CSRFToken': getCsrfToken(),
-          },
-          body: JSON.stringify(requisitionData),
-          credentials: 'same-origin',
-        });
+
+        if (!itemResponse.ok) {
+          const errorData = await itemResponse.json();
+          console.error('Błąd dodawania przedmiotu:', errorData);
+          // Kontynuujemy mimo błędu, aby spróbować dodać pozostałe przedmioty
+        }
       }
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || 'Błąd zapisu zapotrzebowania');
-      }
+      // Odśwież listę zapotrzebowań w kontekście
+      refreshRequisitions();
 
-      // Sukces - powrót do listy zapotrzebowań
-      navigate('/dashboard/requests/material');
+      // Odczekaj chwilę przed przekierowaniem, aby dać czas na odświeżenie kontekstu
+      setTimeout(() => {
+        // Sukces - powrót do listy zapotrzebowań
+        navigate('/dashboard/requests/material');
+      }, 300);
 
     } catch (err) {
       console.error('Błąd:', err);
       setError(err.message || 'Wystąpił błąd podczas zapisywania zapotrzebowania');
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
   };
 
@@ -303,7 +454,7 @@ const MaterialRequisitionForm = ({ mode = 'view' }) => {
 
       <div className="bg-white rounded-xl shadow-md p-6 mb-8">
         <form onSubmit={handleSubmit}>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
             <div>
               <label htmlFor="project" className="block text-sm font-medium text-gray-700 mb-1">
                 Projekt
@@ -372,6 +523,22 @@ const MaterialRequisitionForm = ({ mode = 'view' }) => {
                 </div>
               </div>
             )}
+          </div>
+
+          <div className="mb-6">
+            <label htmlFor="comment" className="block text-sm font-medium text-gray-700 mb-1">
+              Komentarz
+            </label>
+            <textarea
+              id="comment"
+              name="comment"
+              rows="3"
+              value={requisition.comment || ''}
+              onChange={handleChange}
+              disabled={!isEditing}
+              placeholder="Dodaj komentarz lub specjalne instrukcje do tego zapotrzebowania..."
+              className={`w-full px-4 py-2 border ${isEditing ? 'border-gray-300' : 'border-gray-200 bg-gray-50'} rounded-lg focus:outline-none ${isEditing ? 'focus:ring-2 focus:ring-orange-500' : ''}`}
+            ></textarea>
           </div>
 
           <div className="border-t pt-6">
@@ -444,12 +611,12 @@ const MaterialRequisitionForm = ({ mode = 'view' }) => {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="text-sm text-gray-900">
-                            {item.price ? `${item.price.toLocaleString()} zł` : '-'}
+                            {item.price ? `${parseFloat(item.price).toLocaleString()} zł` : '-'}
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="text-sm text-gray-900">
-                            {item.price ? `${(item.price * item.quantity).toLocaleString()} zł` : '-'}
+                            {item.price ? `${(parseFloat(item.price) * item.quantity).toLocaleString()} zł` : '-'}
                           </div>
                         </td>
                         {isEditing && (
@@ -525,10 +692,10 @@ const MaterialRequisitionForm = ({ mode = 'view' }) => {
               </button>
               <button
                 type="submit"
-                disabled={loading}
+                disabled={submitting}
                 className="flex items-center px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors disabled:opacity-50"
               >
-                {loading ? (
+                {submitting ? (
                   <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-white mr-2"></div>
                 ) : (
                   <Save className="mr-2" size={18} />
@@ -616,7 +783,7 @@ const MaterialRequisitionForm = ({ mode = 'view' }) => {
 
                         <div className="mt-4">
                           <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Cena jednostkowa (zł)
+                            Cena jednostkowa (zł) <span className="text-red-500">*</span>
                           </label>
                           <input
                             type="number"
@@ -625,11 +792,15 @@ const MaterialRequisitionForm = ({ mode = 'view' }) => {
                             value={itemPrice}
                             onChange={(e) => setItemPrice(e.target.value)}
                             placeholder={selectedItem.price ? `Domyślnie: ${selectedItem.price} zł` : 'Wprowadź cenę'}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+                            className={`w-full px-4 py-2 border ${(!itemPrice && !selectedItem.price) ? 'border-red-300 bg-red-50' : 'border-gray-300'} rounded-lg focus:outline-none focus:ring-2 ${(!itemPrice && !selectedItem.price) ? 'focus:ring-red-500' : 'focus:ring-orange-500'}`}
                           />
-                          {selectedItem.price && (
+                          {selectedItem.price ? (
                             <p className="mt-1 text-xs text-gray-500">
-                              Pozostaw puste, aby użyć domyślnej ceny przedmiotu
+                              Pozostaw puste, aby użyć domyślnej ceny przedmiotu ({selectedItem.price} zł)
+                            </p>
+                          ) : (
+                            <p className={`mt-1 text-xs ${!itemPrice ? 'text-red-500 font-medium' : 'text-gray-500'}`}>
+                              Cena jest wymagana. Przedmiot nie ma domyślnej ceny.
                             </p>
                           )}
                         </div>

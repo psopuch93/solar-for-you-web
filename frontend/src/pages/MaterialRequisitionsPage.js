@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { Routes, Route, useNavigate } from 'react-router-dom';
+// frontend/src/pages/MaterialRequisitionsPage.js
+import React, { useState, useEffect, useCallback } from 'react';
+import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import {
   PlusCircle,
   Search,
@@ -13,25 +14,35 @@ import {
 } from 'lucide-react';
 import { getCsrfToken } from '../utils/csrfToken';
 import MaterialRequisitionForm from '../components/MaterialRequisitionForm';
+import { useRequisitions } from '../contexts/RequisitionContext';
+import { useDialog } from '../contexts/DialogContext';
 
 const MaterialRequisitionsPage = () => {
-  const [requisitions, setRequisitions] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const {
+    requisitions,
+    shouldRefresh,
+    loading,
+    error,
+    updateRequisitions
+  } = useRequisitions();
+
+  const { confirmDelete } = useDialog();
+
   const [searchTerm, setSearchTerm] = useState('');
   const [sortField, setSortField] = useState('created_at');
   const [sortDirection, setSortDirection] = useState('desc');
+  const [localLoading, setLocalLoading] = useState(false);
 
   const navigate = useNavigate();
+  const location = useLocation();
 
-  useEffect(() => {
-    fetchRequisitions();
-  }, []);
-
-  const fetchRequisitions = async () => {
+  // Definiujemy funkcję fetchData jako useCallback, aby zapobiec zbędnym re-renderowaniom
+  const fetchData = useCallback(async (searchQuery = '') => {
     try {
-      setLoading(true);
-      const response = await fetch('/api/requisitions/?requisition_type=material', {
+      setLocalLoading(true);
+      // Dodajemy parametr wyszukiwania do URL jeśli istnieje
+      const searchParam = searchQuery ? `&search=${encodeURIComponent(searchQuery)}` : '';
+      const response = await fetch(`/api/requisitions/?requisition_type=material${searchParam}`, {
         credentials: 'same-origin',
       });
 
@@ -40,37 +51,71 @@ const MaterialRequisitionsPage = () => {
       }
 
       const data = await response.json();
-      setRequisitions(data);
-      setError(null);
+      updateRequisitions(data);
     } catch (err) {
       console.error('Błąd:', err);
-      setError('Nie udało się pobrać zapotrzebowań. Spróbuj ponownie później.');
     } finally {
-      setLoading(false);
+      setLocalLoading(false);
     }
+  }, [updateRequisitions]);
+
+  // Efekt do ładowania zapotrzebowań gdy shouldRefresh zmienia się lub jesteśmy na głównej stronie
+  useEffect(() => {
+    if (shouldRefresh && location.pathname === '/dashboard/requests/material') {
+      fetchData();
+    }
+  }, [shouldRefresh, location.pathname, fetchData]);
+
+  // Dodatkowy efekt do ładowania danych przy pierwszym renderowaniu
+  useEffect(() => {
+    if (location.pathname === '/dashboard/requests/material') {
+      fetchData();
+    }
+  }, [location.pathname, fetchData]);
+
+  // Obsługa wyszukiwania z debounce
+  const handleSearchChange = (e) => {
+    const value = e.target.value;
+    setSearchTerm(value);
+
+    // Czyszczenie poprzedniego timera debounce
+    if (window.searchTimer) {
+      clearTimeout(window.searchTimer);
+    }
+
+    // Ustawienie nowego timera (300ms opóźnienia)
+    window.searchTimer = setTimeout(() => {
+      // Wywołanie API tylko jeśli wartość ma co najmniej 2 znaki lub jest pusta
+      if (value.length === 0 || value.length >= 2) {
+        fetchData(value);
+      }
+    }, 300);
   };
 
-  const handleDelete = async (id) => {
-    if (window.confirm('Czy na pewno chcesz usunąć to zapotrzebowanie?')) {
-      try {
-        const response = await fetch(`/api/requisitions/${id}/`, {
-          method: 'DELETE',
-          headers: {
-            'X-CSRFToken': getCsrfToken()
-          },
-          credentials: 'same-origin',
-        });
+  const handleDelete = async (id, number) => {
+    confirmDelete(
+      `Czy na pewno chcesz usunąć zapotrzebowanie ${number}?`,
+      async () => {
+        try {
+          const response = await fetch(`/api/requisitions/${id}/`, {
+            method: 'DELETE',
+            headers: {
+              'X-CSRFToken': getCsrfToken()
+            },
+            credentials: 'same-origin',
+          });
 
-        if (!response.ok) {
-          throw new Error('Błąd usuwania zapotrzebowania');
+          if (!response.ok) {
+            throw new Error('Błąd usuwania zapotrzebowania');
+          }
+
+          // Odśwież dane lokalnie
+          fetchData();
+        } catch (err) {
+          console.error('Błąd:', err);
         }
-
-        fetchRequisitions();
-      } catch (err) {
-        console.error('Błąd:', err);
-        setError('Nie udało się usunąć zapotrzebowania. Spróbuj ponownie później.');
       }
-    }
+    );
   };
 
   const handleSort = (field) => {
@@ -120,14 +165,11 @@ const MaterialRequisitionsPage = () => {
       : aValue < bValue ? 1 : -1;
   });
 
-  // Filtrowanie zapotrzebowań
-  const filteredRequisitions = sortedRequisitions.filter(requisition => {
-    const searchTermLower = searchTerm.toLowerCase();
-    return (
-      (requisition.number && requisition.number.toLowerCase().includes(searchTermLower)) ||
-      (requisition.project_name && requisition.project_name.toLowerCase().includes(searchTermLower))
-    );
-  });
+  // Filtrowanie zapotrzebowań - teraz tylko dla wyszukiwań lokalnych (niezależnie od zapytania do API)
+  const filteredRequisitions = sortedRequisitions;
+
+  // Używamy localLoading lub loading z kontekstu
+  const isLoading = localLoading || loading;
 
   return (
     <Routes>
@@ -158,17 +200,17 @@ const MaterialRequisitionsPage = () => {
             <div className="relative w-full max-w-md ml-4">
               <input
                 type="text"
-                placeholder="Szukaj zapotrzebowań..."
+                placeholder="Szukaj zapotrzebowań, przedmiotów..."
                 className="pl-10 pr-4 py-2 w-full rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-orange-500"
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={handleSearchChange}
               />
               <Search className="absolute left-3 top-2.5 text-gray-400" size={18} />
             </div>
           </div>
 
           <div className="bg-white rounded-xl shadow-md p-6 mb-8">
-            {loading ? (
+            {isLoading ? (
               <div className="flex justify-center p-8">
                 <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-orange-500"></div>
               </div>
@@ -282,7 +324,7 @@ const MaterialRequisitionsPage = () => {
                               <Edit size={18} />
                             </button>
                             <button
-                              onClick={() => handleDelete(requisition.id)}
+                              onClick={() => handleDelete(requisition.id, requisition.number)}
                               className="text-red-600 hover:text-red-900"
                               title="Usuń"
                             >

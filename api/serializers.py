@@ -232,7 +232,7 @@ class RequisitionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Requisition
         fields = ('id', 'number', 'project', 'project_name', 'deadline', 'requisition_type', 'type_display',
-                 'status', 'status_display', 'items', 'total_price', 'created_at', 'updated_at',
+                 'status', 'status_display', 'comment', 'items', 'total_price', 'created_at', 'updated_at',
                  'created_by', 'created_by_name', 'updated_by', 'updated_by_name')
         read_only_fields = ('id', 'number', 'created_at', 'updated_at', 'created_by', 'updated_by')
 
