@@ -7,12 +7,38 @@ const RequisitionContext = createContext();
 // Użyj tego hooka, aby uzyskać dostęp do kontekstu
 export const useRequisitions = () => useContext(RequisitionContext);
 
+// Zmienna globalna dla śledzenia, kiedy należy odświeżyć dane
+let globalRefreshFlag = false;
+let globalRefreshTimestamp = Date.now();
+
 // Provider komponent
 export const RequisitionProvider = ({ children }) => {
   const [requisitions, setRequisitions] = useState([]);
   const [shouldRefresh, setShouldRefresh] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [refreshTimestamp, setRefreshTimestamp] = useState(Date.now());
+
+  // Efekt do sprawdzania globalnej flagi odświeżania
+  useEffect(() => {
+    // Sprawdź, czy globalna flaga odświeżania jest ustawiona
+    if (globalRefreshFlag) {
+      setShouldRefresh(true);
+      globalRefreshFlag = false; // Zresetuj flagę
+      setRefreshTimestamp(globalRefreshTimestamp); // Aktualizuj timestamp
+    }
+
+    // Sprawdzaj co 5 sekund, czy nie ma potrzeby odświeżenia danych
+    const checkInterval = setInterval(() => {
+      if (globalRefreshFlag) {
+        setShouldRefresh(true);
+        globalRefreshFlag = false; // Zresetuj flagę
+        setRefreshTimestamp(globalRefreshTimestamp); // Aktualizuj timestamp
+      }
+    }, 5000);
+
+    return () => clearInterval(checkInterval);
+  }, []);
 
   // Funkcja do pobierania zapotrzebowań
   const fetchRequisitions = useCallback(async () => {
@@ -20,7 +46,7 @@ export const RequisitionProvider = ({ children }) => {
       setLoading(true);
       setError(null);
 
-      const response = await fetch('/api/requisitions/?requisition_type=material', {
+      const response = await fetch('/api/requisitions/', {
         credentials: 'same-origin',
       });
 
@@ -29,6 +55,7 @@ export const RequisitionProvider = ({ children }) => {
       }
 
       const data = await response.json();
+      console.log("Pobrano dane zapotrzebowań:", data.length, "elementów");
       setRequisitions(data);
       setShouldRefresh(false);
     } catch (err) {
@@ -42,13 +69,27 @@ export const RequisitionProvider = ({ children }) => {
   // Efekt do automatycznego pobierania zapotrzebowań
   useEffect(() => {
     if (shouldRefresh) {
+      console.log("Odświeżanie danych zapotrzebowań...");
       fetchRequisitions();
     }
-  }, [shouldRefresh, fetchRequisitions]);
+  }, [shouldRefresh, fetchRequisitions, refreshTimestamp]);
 
-  // Funkcja do wymuszenia odświeżenia listy zapotrzebowań
-  const refreshRequisitions = useCallback(() => {
+  // Funkcja do wymuszenia odświeżenia listy zapotrzebowań globalnie
+  const forceGlobalRefresh = useCallback(() => {
+    console.log("Wymuszanie globalnego odświeżenia danych...");
+    globalRefreshFlag = true;
+    globalRefreshTimestamp = Date.now();
     setShouldRefresh(true);
+    setRefreshTimestamp(globalRefreshTimestamp);
+  }, []);
+
+  // Funkcja do wymuszenia odświeżenia listy zapotrzebowań lokalnie
+  const refreshRequisitions = useCallback(() => {
+    console.log("Wymuszanie lokalnego odświeżenia danych...");
+    setShouldRefresh(true);
+    // Ustaw również flagę globalną, aby inne komponenty wiedziały o zmianie
+    globalRefreshFlag = true;
+    globalRefreshTimestamp = Date.now();
   }, []);
 
   // Funkcja do aktualizacji zapotrzebowań bez wywołania fetcha
@@ -73,6 +114,10 @@ export const RequisitionProvider = ({ children }) => {
       // Dodaj nowe zapotrzebowanie
       return [...prev, requisition];
     });
+
+    // Ustaw również flagę globalną, aby inne komponenty wiedziały o zmianie
+    globalRefreshFlag = true;
+    globalRefreshTimestamp = Date.now();
   }, []);
 
   // Wartości udostępniane przez kontekst
@@ -82,9 +127,11 @@ export const RequisitionProvider = ({ children }) => {
     loading,
     error,
     refreshRequisitions,
+    forceGlobalRefresh,
     updateRequisitions,
     addRequisition,
-    fetchRequisitions
+    fetchRequisitions,
+    refreshTimestamp
   };
 
   return (

@@ -19,7 +19,7 @@ import WarehouseRequisitionDetailsPage from './WarehouseRequisitionDetailsPage';
 
 const WarehouseRequisitionsPage = () => {
   const navigate = useNavigate();
-  const { confirmDialog } = useDialog();
+  const { confirm, showInfo, showWarning } = useDialog();
   const { refreshRequisitions } = useRequisitions();
 
   const [allRequisitions, setAllRequisitions] = useState([]);
@@ -32,6 +32,16 @@ const WarehouseRequisitionsPage = () => {
   const [expandedRequisition, setExpandedRequisition] = useState(null);
   const [requisitionDetails, setRequisitionDetails] = useState({});
   const [selectedStatuses, setSelectedStatuses] = useState({});
+
+  // Add the handleSort function that was missing
+  const handleSort = (field) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
 
   useEffect(() => {
     fetchAllRequisitions();
@@ -94,14 +104,41 @@ const WarehouseRequisitionsPage = () => {
     }
   };
 
-  const changeRequisitionStatus = async (requisitionId, newStatus) => {
+  // Add the forceGlobalRefresh function that was missing
+  const forceGlobalRefresh = () => {
+    refreshRequisitions();
+  };
+
+  const handleStatusChange = (requisitionId, newStatus) => {
+  const statusLabels = {
+    'to_accept': 'Do akceptacji',
+    'accepted': 'Zaakceptowano',
+    'rejected': 'Odrzucono',
+    'in_progress': 'W trakcie realizacji',
+    'completed': 'Zrealizowano'
+  };
+
+  // Natychmiast aktualizuj wyświetlany status w kolumnie Status
+  setAllRequisitions(prevReqs =>
+    prevReqs.map(req =>
+      req.id === requisitionId ? { ...req, status: newStatus } : req
+    )
+  );
+
+  // Aktualizuj stan wybranego statusu w dropdown
+  setSelectedStatuses(prev => ({
+    ...prev,
+    [requisitionId]: newStatus
+  }));
+
+  // Użyj metody confirm z kontekstu dialogowego
+  confirm(
+    `Czy chcesz zmienić status zapotrzebowania na "${statusLabels[newStatus]}"?`,
+    async () => {
       try {
         setLoading(true);
-        console.log(`Zmiana statusu dla ${requisitionId} na ${newStatus}`);
 
-        // Pobierz aktualny token CSRF
         const csrfToken = getCsrfToken();
-
         const response = await fetch(`/api/requisitions/${requisitionId}/`, {
           method: 'PATCH',
           headers: {
@@ -112,104 +149,74 @@ const WarehouseRequisitionsPage = () => {
           credentials: 'same-origin',
         });
 
-        // Ważne: zaczekaj na pełną odpowiedź przed kontynuowaniem
-        const responseData = await response.json();
-
         if (!response.ok) {
-          throw new Error(`Błąd serwera: ${response.status} ${JSON.stringify(responseData)}`);
+          throw new Error(`Błąd serwera: ${response.status}`);
         }
 
+        // Pobierz zaktualizowane dane
+        const responseData = await response.json();
         console.log('Status zaktualizowany pomyślnie:', responseData);
 
-        // Aktualizuj listę wszystkich zapotrzebowań
+        // Aktualizuj lokalny stan
         setAllRequisitions(prevReqs =>
           prevReqs.map(req =>
-            req.id === requisitionId ? {
-              ...req,
-              status: newStatus
-            } : req
+            req.id === requisitionId ? { ...req, status: newStatus } : req
           )
         );
 
-        // Aktualizuj szczegóły, jeśli są załadowane
-        if (requisitionDetails[requisitionId]) {
-          setRequisitionDetails(prev => ({
-            ...prev,
-            [requisitionId]: {
-              ...prev[requisitionId],
-              status: newStatus
-            }
-          }));
-        }
+        // Wymuś odświeżenie danych we wszystkich komponentach używających kontekstu
+        forceGlobalRefresh();
 
-        // Aktualizuj stan selecta
-        setSelectedStatuses(prev => ({
-          ...prev,
-          [requisitionId]: newStatus
-        }));
-
-        // Odśwież dane z serwera po zmianie
-        await fetchAllRequisitions();
-        refreshRequisitions();
-
-        return true;
+        // Pokaż komunikat o sukcesie
+        showInfo("Status został pomyślnie zaktualizowany");
       } catch (err) {
         console.error('Błąd podczas zmiany statusu:', err);
-        alert(`Błąd podczas zmiany statusu: ${err.message}`);
 
         // Przywróć poprzedni status w UI
+        const originalStatus = allRequisitions.find(
+          req => req.id === requisitionId && req.id !== newStatus
+        )?.status || 'to_accept';
+
+        // Przywróć stan w kolumnie Status
+        setAllRequisitions(prevReqs =>
+          prevReqs.map(req =>
+            req.id === requisitionId ? { ...req, status: originalStatus } : req
+          )
+        );
+
+        // Przywróć stan w dropdownie
         setSelectedStatuses(prev => ({
           ...prev,
-          [requisitionId]: allRequisitions.find(req => req.id === requisitionId)?.status || 'to_accept'
+          [requisitionId]: originalStatus
         }));
 
-        return false;
+        // Pokaż komunikat o błędzie
+        showWarning(err.message || 'Wystąpił błąd podczas zmiany statusu');
       } finally {
         setLoading(false);
       }
+    },
+    // W przypadku anulowania dialogu, przywróć poprzedni status
+    () => {
+      const originalStatus = allRequisitions.find(
+        req => req.id === requisitionId && req.id !== newStatus
+      )?.status || 'to_accept';
+
+      // Przywróć stan w kolumnie Status
+      setAllRequisitions(prevReqs =>
+        prevReqs.map(req =>
+          req.id === requisitionId ? { ...req, status: originalStatus } : req
+        )
+      );
+
+      // Przywróć stan w dropdownie
+      setSelectedStatuses(prev => ({
+        ...prev,
+        [requisitionId]: originalStatus
+      }));
     }
-
-  const handleStatusChange = (requisitionId, newStatus) => {
-    const statusLabels = {
-      'to_accept': 'Do akceptacji',
-      'accepted': 'Zaakceptowano',
-      'rejected': 'Odrzucono',
-      'in_progress': 'W trakcie realizacji',
-      'completed': 'Zrealizowano'
-    };
-
-    // Tymczasowo zaktualizuj UI dla lepszej responsywności
-    setSelectedStatuses(prev => ({
-      ...prev,
-      [requisitionId]: newStatus
-    }));
-
-    confirmDialog(
-      `Czy chcesz zmienić status zapotrzebowania na "${statusLabels[newStatus]}"?`,
-      async () => {
-        const success = await changeRequisitionStatus(requisitionId, newStatus);
-        if (!success) {
-          setError('Nie udało się zaktualizować statusu. Spróbuj ponownie później.');
-        }
-      },
-      // Funkcja wywoływana przy anulowaniu - przywróć poprzedni status
-      () => {
-        setSelectedStatuses(prev => ({
-          ...prev,
-          [requisitionId]: allRequisitions.find(req => req.id === requisitionId)?.status || 'to_accept'
-        }));
-      }
-    );
-  };
-
-  const handleSort = (field) => {
-    if (sortField === field) {
-      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortField(field);
-      setSortDirection('asc');
-    }
-  };
+  );
+};
 
   const getStatusIcon = (status) => {
     switch(status) {

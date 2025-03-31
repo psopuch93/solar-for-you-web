@@ -1,6 +1,7 @@
 // frontend/src/pages/MaterialRequisitionsPage.js
 import React, { useState, useEffect, useCallback } from 'react';
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
+import { useRequisitions } from '../contexts/RequisitionContext';
 import {
   PlusCircle,
   Search,
@@ -16,111 +17,44 @@ import {
 } from 'lucide-react';
 import { getCsrfToken } from '../utils/csrfToken';
 import MaterialRequisitionForm from '../components/MaterialRequisitionForm';
-import { useRequisitions } from '../contexts/RequisitionContext';
 import { useDialog } from '../contexts/DialogContext';
 
 const MaterialRequisitionsPage = () => {
   const {
-    requisitions,
-    shouldRefresh,
-    loading,
-    error,
-    refreshRequisitions,
-    updateRequisitions
-  } = useRequisitions();
+      requisitions,
+      shouldRefresh,
+      loading,
+      error,
+      refreshRequisitions,
+      refreshTimestamp  // Dodaj tę zmienną
+    } = useRequisitions();
 
-  const { confirmDialog } = useDialog();
+    useEffect(() => {
+      // Kiedy refreshTimestamp się zmienia, odśwież dane
+      if (refreshTimestamp) {
+        console.log("MaterialRequisitionsPage: Wykryto zmianę w danych zapotrzebowań");
+        refreshRequisitions();
+      }
+    }, [refreshTimestamp, refreshRequisitions]);
+
+    // Opcjonalnie: dodaj efekt, który wyświetli komunikat dla debugowania
+    useEffect(() => {
+      console.log("MaterialRequisitionsPage: Aktualne dane zapotrzebowań:", requisitions.length, "elementów");
+    }, [requisitions]);
+
+
+  const { confirmDelete } = useDialog();
   const [searchTerm, setSearchTerm] = useState('');
   const [sortField, setSortField] = useState('created_at');
   const [sortDirection, setSortDirection] = useState('desc');
   const [statusFilter, setStatusFilter] = useState('all');
   const [localLoading, setLocalLoading] = useState(false);
-  const [selectedStatuses, setSelectedStatuses] = useState({});
 
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Synchronizacja statusów z danymi zapotrzebowań
-  useEffect(() => {
-    const initialStatuses = {};
-    requisitions.forEach(req => {
-      initialStatuses[req.id] = req.status;
-    });
-    setSelectedStatuses(initialStatuses);
-  }, [requisitions]);
-
-  const handleStatusChange = async (requisitionId, newStatus) => {
-    const statusLabels = {
-      'to_accept': 'Do akceptacji',
-      'accepted': 'Zaakceptowano',
-      'rejected': 'Odrzucono',
-      'in_progress': 'W trakcie realizacji',
-      'completed': 'Zrealizowano'
-    };
-
-    try {
-      // Natychmiastowa aktualizacja lokalnego stanu
-      const updatedRequisitions = requisitions.map(req =>
-        req.id === requisitionId
-          ? { ...req, status: newStatus, status_display: statusLabels[newStatus] }
-          : req
-      );
-
-      // Zaktualizuj stan lokalny przed wysłaniem żądania
-      updateRequisitions(updatedRequisitions);
-
-      const csrfToken = getCsrfToken();
-
-      const response = await fetch(`/api/requisitions/${requisitionId}/`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-CSRFToken': csrfToken,
-        },
-        body: JSON.stringify({
-          status: newStatus,
-          requisition_type: 'material'
-        }),
-        credentials: 'same-origin',
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || 'Błąd zmiany statusu');
-      }
-
-      // Opcjonalnie: pobierz zaktualizowane dane z serwera
-      const updatedRequisition = await response.json();
-
-      // Zaktualizuj stan z danymi z serwera
-      updateRequisitions(
-        requisitions.map(req =>
-          req.id === requisitionId ? updatedRequisition : req
-        )
-      );
-
-      // Wyświetl komunikat o sukcesie
-      confirmDialog({
-        type: 'info',
-        message: `Status zapotrzebowania został zmieniony na "${statusLabels[newStatus]}"`
-      });
-
-    } catch (error) {
-      console.error('Błąd zmiany statusu:', error);
-
-      // Przywróć poprzedni status w razie błędu
-      updateRequisitions(requisitions);
-
-      // Pokaż błąd
-      confirmDialog({
-        type: 'warning',
-        message: error.message || 'Nie udało się zmienić statusu'
-      });
-    }
-  };
-
   const handleDelete = async (id, number) => {
-    confirmDialog({
+    confirmDelete({
       type: 'delete',
       message: `Czy na pewno chcesz usunąć zapotrzebowanie ${number}?`,
       onConfirm: async () => {
@@ -141,7 +75,7 @@ const MaterialRequisitionsPage = () => {
           refreshRequisitions();
         } catch (err) {
           console.error('Błąd:', err);
-          confirmDialog({
+          confirmDelete({
             type: 'warning',
             message: 'Nie udało się usunąć zapotrzebowania'
           });
@@ -437,17 +371,7 @@ const MaterialRequisitionsPage = () => {
                             >
                               <Trash2 size={18} />
                             </button>
-                            <select
-                              value={selectedStatuses[requisition.id] || requisition.status}
-                              onChange={(e) => handleStatusChange(requisition.id, e.target.value)}
-                              className="text-sm border rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-orange-500"
-                            >
-                              <option value="to_accept">Do akceptacji</option>
-                              <option value="accepted">Zaakceptowano</option>
-                              <option value="in_progress">W trakcie realizacji</option>
-                              <option value="completed">Zrealizowano</option>
-                              <option value="rejected">Odrzucono</option>
-                            </select>
+                            {/* Usunięto dropdown do zmiany statusu */}
                           </div>
                         </td>
                       </tr>
@@ -457,6 +381,13 @@ const MaterialRequisitionsPage = () => {
               </div>
             )}
           </div>
+
+          {/* Wskaźnik ładowania dla operacji aktualizacji */}
+          {localLoading && (
+            <div className="fixed bottom-4 right-4 bg-white p-2 rounded-full shadow-lg">
+              <div className="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-orange-500"></div>
+            </div>
+          )}
         </div>
       } />
       <Route path="/new" element={<MaterialRequisitionForm mode="create" />} />

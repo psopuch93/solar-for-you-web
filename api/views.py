@@ -380,9 +380,9 @@ class RequisitionViewSet(viewsets.ModelViewSet):
         # Wysyłanie powiadomienia e-mail
         try:
             send_requisition_notification(requisition)
-        except Exception as e:
-            # Log błędu, ale nie przerywaj procesu
-            logging.error(f"Błąd wysyłania powiadomienia: {e}")
+        except Exception:
+            # Usunięto logowanie błędu
+            pass
 
     def perform_update(self, serializer):
         """
@@ -397,16 +397,15 @@ class RequisitionViewSet(viewsets.ModelViewSet):
             updated_by=self.request.user
         )
 
-        # Dodaj logowanie zmian
-        logging.info(f"Zmiana statusu zapotrzebowania {instance.id}: {old_status} -> {updated_instance.status}")
-
         # Opcjonalnie: wyślij powiadomienie o zmianie statusu
         if old_status != updated_instance.status:
             try:
                 # Możesz zdefiniować osobną funkcję wysyłania powiadomień o zmianie statusu
-                send_status_change_notification(updated_instance)
-            except Exception as e:
-                logging.error(f"Błąd wysyłania powiadomienia o zmianie statusu: {e}")
+                # send_status_change_notification(updated_instance)
+                pass
+            except Exception:
+                # Usunięto logowanie błędu
+                pass
 
     def partial_update(self, request, *args, **kwargs):
         """
@@ -415,8 +414,8 @@ class RequisitionViewSet(viewsets.ModelViewSet):
         kwargs['partial'] = True
         try:
             return super().partial_update(request, *args, **kwargs)
-        except Exception as e:
-            logging.error(f"Błąd aktualizacji zapotrzebowania: {e}")
+        except Exception:
+            # Usunięto logowanie błędu
             return Response(
                 {'detail': 'Nie udało się zaktualizować zapotrzebowania.'},
                 status=status.HTTP_400_BAD_REQUEST
@@ -452,8 +451,8 @@ class RequisitionViewSet(viewsets.ModelViewSet):
             serializer = self.get_serializer(requisition)
             return Response(serializer.data)
 
-        except Exception as e:
-            logging.error(f"Błąd zmiany statusu: {e}")
+        except Exception:
+            # Usunięto logowanie błędu
             return Response(
                 {'detail': 'Nie udało się zmienić statusu'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
