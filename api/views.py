@@ -421,6 +421,42 @@ class RequisitionItemViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated, HasModulePrivilege]
     required_privilege = 'manage_requisitions'
 
+    def update(self, request, *args, **kwargs):
+        """Nadpisana metoda update z dodatkowymi logami"""
+        print(f"PATCH/PUT - Update request received: {request.data}")
+
+        # Zapisz dane przed aktualizacją
+        instance = self.get_object()
+        old_status = instance.status
+
+        # Wywołaj oryginalną metodę update
+        response = super().update(request, *args, **kwargs)
+
+        # Sprawdź, czy status się zmienił i zaloguj to
+        instance.refresh_from_db()
+        print(f"Status change: {old_status} -> {instance.status}")
+        print(f"Response data: {response.data}")
+
+        return response
+
+    def partial_update(self, request, *args, **kwargs):
+        """Nadpisana metoda partial_update z dodatkowymi logami"""
+        print(f"PATCH - Partial update request received: {request.data}")
+
+        # Zapisz dane przed aktualizacją
+        instance = self.get_object()
+        old_status = instance.status
+
+        # Wywołaj oryginalną metodę partial_update
+        response = super().partial_update(request, *args, **kwargs)
+
+        # Sprawdź, czy status się zmienił i zaloguj to
+        instance.refresh_from_db()
+        print(f"Status change: {old_status} -> {instance.status}")
+        print(f"Response data: {response.data}")
+
+        return response
+
 @api_view(['POST'])
 @permission_classes([permissions.IsAuthenticated])
 def validate_requisition(request):

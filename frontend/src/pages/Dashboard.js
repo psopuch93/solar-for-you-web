@@ -1,3 +1,5 @@
+// Modyfikacja pliku frontend/src/pages/Dashboard.js
+
 import React, { useState } from 'react';
 import { useNavigate, Routes, Route, NavLink } from 'react-router-dom';
 import {
@@ -19,12 +21,13 @@ import ProjectsPage from './ProjectsPage';
 import ClientsPage from './ClientsPage';
 import EmployeesPage from './EmployeesPage';
 import MainDashboard from './MainDashboard';
+import RequisitionsPage from './RequisitionsPage';
+import WarehousePage from './WarehousePage';
 import { ProjectProvider } from '../contexts/ProjectContext';
 import { ClientProvider } from '../contexts/ClientContext';
 import { EmployeeProvider } from '../contexts/EmployeeContext';
 import { RequisitionProvider } from '../contexts/RequisitionContext';
 import { getCsrfToken } from '../utils/csrfToken';
-import RequisitionsPage from './RequisitionsPage';
 
 // Komponenty pomocnicze
 const SidebarItem = ({ icon: Icon, label, isExpanded, to }) => (
@@ -75,8 +78,8 @@ const BusinessDashboard = ({ setIsAuthenticated }) => {
     { icon: FileText, label: 'Progres Raport', path: '/dashboard/reports' },
     { icon: Clipboard, label: 'Raporty', path: '/dashboard/analytics' },
     { icon: Truck, label: 'Zapotrzebowania', path: '/dashboard/requests' },
-    { icon: Wrench, label: 'Brygada Narzędzia', path: '/dashboard/tools' },
     { icon: Warehouse, label: 'Magazyn', path: '/dashboard/warehouse' },
+    { icon: Wrench, label: 'Brygada Narzędzia', path: '/dashboard/tools' },
     { icon: HelpCircle, label: 'Zgłoszenia', path: '/dashboard/tickets' }
   ];
 
@@ -135,6 +138,7 @@ const BusinessDashboard = ({ setIsAuthenticated }) => {
                     <Route path="/clients/*" element={<ClientsPage />} />
                     <Route path="/employees/*" element={<EmployeesPage />} />
                     <Route path="/requests/*" element={<RequisitionsPage />} />
+                    <Route path="/warehouse/*" element={<WarehousePage />} />
                     {/* Pozostałe trasy można dodać w przyszłości */}
                     <Route path="*" element={<div>Strona nie została znaleziona</div>} />
                   </Routes>
