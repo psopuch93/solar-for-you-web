@@ -20,11 +20,14 @@ import WarehouseRequisitionDetailsPage from './WarehouseRequisitionDetailsPage';
 const WarehouseRequisitionsPage = () => {
   const navigate = useNavigate();
   const { confirm, showInfo, showWarning } = useDialog();
-  const { refreshRequisitions } = useRequisitions();
+  const {
+    requisitions,
+    loading,
+    error,
+    refreshRequisitions,
+    updateSingleRequisition
+  } = useRequisitions();
 
-  const [allRequisitions, setAllRequisitions] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [sortField, setSortField] = useState('created_at');
   const [sortDirection, setSortDirection] = useState('desc');
@@ -32,20 +35,21 @@ const WarehouseRequisitionsPage = () => {
   const [expandedRequisition, setExpandedRequisition] = useState(null);
   const [requisitionDetails, setRequisitionDetails] = useState({});
   const [selectedStatuses, setSelectedStatuses] = useState({});
+  const [statusUpdating, setStatusUpdating] = useState({});
 
-  // Add the handleSort function that was missing
-  const handleSort = (field) => {
-    if (sortField === field) {
-      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortField(field);
-      setSortDirection('asc');
-    }
-  };
-
+  // Na początku załaduj dane, ale bez wymuszania odświeżenia
   useEffect(() => {
-    fetchAllRequisitions();
-  }, []);
+    if (requisitions.length === 0) {
+      refreshRequisitions();
+    } else {
+      // Inicjalizuj stan statusów dla istniejących danych
+      const statuses = {};
+      requisitions.forEach(req => {
+        statuses[req.id] = req.status;
+      });
+      setSelectedStatuses(statuses);
+    }
+  }, [requisitions, refreshRequisitions]);
 
   // Efekt pobierający szczegóły konkretnego zapotrzebowania po rozwinięciu
   useEffect(() => {
@@ -74,149 +78,96 @@ const WarehouseRequisitionsPage = () => {
     }
   };
 
-  const fetchAllRequisitions = async () => {
-    try {
-      setLoading(true);
-      const response = await fetch('/api/requisitions/', {
-        credentials: 'same-origin',
-      });
-
-      if (!response.ok) {
-        throw new Error('Błąd pobierania zapotrzebowań');
-      }
-
-      const data = await response.json();
-      setAllRequisitions(data);
-
-      // Inicjalizacja statusów dla nowo pobranych danych
-      const initialStatuses = {};
-      data.forEach(req => {
-        initialStatuses[req.id] = req.status;
-      });
-      setSelectedStatuses(initialStatuses);
-
-      setError(null);
-    } catch (err) {
-      console.error('Błąd:', err);
-      setError('Nie udało się pobrać zapotrzebowań. Spróbuj ponownie później.');
-    } finally {
-      setLoading(false);
+  const handleSort = (field) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
     }
-  };
-
-  // Add the forceGlobalRefresh function that was missing
-  const forceGlobalRefresh = () => {
-    refreshRequisitions();
   };
 
   const handleStatusChange = (requisitionId, newStatus) => {
-  const statusLabels = {
-    'to_accept': 'Do akceptacji',
-    'accepted': 'Zaakceptowano',
-    'rejected': 'Odrzucono',
-    'in_progress': 'W trakcie realizacji',
-    'completed': 'Zrealizowano'
-  };
+    const statusLabels = {
+      'to_accept': 'Do akceptacji',
+      'accepted': 'Zaakceptowano',
+      'rejected': 'Odrzucono',
+      'in_progress': 'W trakcie realizacji',
+      'completed': 'Zrealizowano'
+    };
 
-  // Natychmiast aktualizuj wyświetlany status w kolumnie Status
-  setAllRequisitions(prevReqs =>
-    prevReqs.map(req =>
-      req.id === requisitionId ? { ...req, status: newStatus } : req
-    )
-  );
+    // Znajdź pełen obiekt zapotrzebowania
+    const requisition = requisitions.find(req => req.id === requisitionId);
+    if (!requisition) return;
 
-  // Aktualizuj stan wybranego statusu w dropdown
-  setSelectedStatuses(prev => ({
-    ...prev,
-    [requisitionId]: newStatus
-  }));
+    // Zapamiętaj obecny status przed zmianą
+    const previousStatus = requisition.status;
 
-  // Użyj metody confirm z kontekstu dialogowego
-  confirm(
-    `Czy chcesz zmienić status zapotrzebowania na "${statusLabels[newStatus]}"?`,
-    async () => {
-      try {
-        setLoading(true);
+    // Natychmiast aktualizuj wyświetlany status w kolumnie Status i dropdown
+    setSelectedStatuses(prev => ({
+      ...prev,
+      [requisitionId]: newStatus
+    }));
 
-        const csrfToken = getCsrfToken();
-        const response = await fetch(`/api/requisitions/${requisitionId}/`, {
-          method: 'PATCH',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-CSRFToken': csrfToken,
-          },
-          body: JSON.stringify({ status: newStatus }),
-          credentials: 'same-origin',
-        });
+    // Użyj metody confirm z kontekstu dialogowego
+    confirm(
+      `Czy chcesz zmienić status zapotrzebowania na "${statusLabels[newStatus]}"?`,
+      async () => {
+        try {
+          // Pokaż wskaźnik ładowania dla tego konkretnego wiersza
+          setStatusUpdating(prev => ({ ...prev, [requisitionId]: true }));
 
-        if (!response.ok) {
-          throw new Error(`Błąd serwera: ${response.status}`);
+          const csrfToken = getCsrfToken();
+          const response = await fetch(`/api/requisitions/${requisitionId}/`, {
+            method: 'PATCH',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-CSRFToken': csrfToken,
+            },
+            body: JSON.stringify({ status: newStatus }),
+            credentials: 'same-origin',
+          });
+
+          if (!response.ok) {
+            throw new Error(`Błąd serwera: ${response.status}`);
+          }
+
+          // Pobierz zaktualizowane dane
+          const responseData = await response.json();
+
+          // Aktualizuj pojedyncze zapotrzebowanie w kontekście
+          updateSingleRequisition({
+            ...requisition,
+            status: newStatus
+          });
+
+          // Pokaż komunikat o sukcesie
+          showInfo("Status został pomyślnie zaktualizowany");
+        } catch (err) {
+          console.error('Błąd podczas zmiany statusu:', err);
+
+          // Przywróć poprzedni status w UI
+          setSelectedStatuses(prev => ({
+            ...prev,
+            [requisitionId]: previousStatus
+          }));
+
+          // Pokaż komunikat o błędzie
+          showWarning(err.message || 'Wystąpił błąd podczas zmiany statusu');
+        } finally {
+          // Usuń wskaźnik ładowania
+          setStatusUpdating(prev => ({ ...prev, [requisitionId]: false }));
         }
-
-        // Pobierz zaktualizowane dane
-        const responseData = await response.json();
-        console.log('Status zaktualizowany pomyślnie:', responseData);
-
-        // Aktualizuj lokalny stan
-        setAllRequisitions(prevReqs =>
-          prevReqs.map(req =>
-            req.id === requisitionId ? { ...req, status: newStatus } : req
-          )
-        );
-
-        // Wymuś odświeżenie danych we wszystkich komponentach używających kontekstu
-        forceGlobalRefresh();
-
-        // Pokaż komunikat o sukcesie
-        showInfo("Status został pomyślnie zaktualizowany");
-      } catch (err) {
-        console.error('Błąd podczas zmiany statusu:', err);
-
-        // Przywróć poprzedni status w UI
-        const originalStatus = allRequisitions.find(
-          req => req.id === requisitionId && req.id !== newStatus
-        )?.status || 'to_accept';
-
-        // Przywróć stan w kolumnie Status
-        setAllRequisitions(prevReqs =>
-          prevReqs.map(req =>
-            req.id === requisitionId ? { ...req, status: originalStatus } : req
-          )
-        );
-
-        // Przywróć stan w dropdownie
+      },
+      // W przypadku anulowania dialogu, przywróć poprzedni status
+      () => {
         setSelectedStatuses(prev => ({
           ...prev,
-          [requisitionId]: originalStatus
+          [requisitionId]: previousStatus
         }));
-
-        // Pokaż komunikat o błędzie
-        showWarning(err.message || 'Wystąpił błąd podczas zmiany statusu');
-      } finally {
-        setLoading(false);
       }
-    },
-    // W przypadku anulowania dialogu, przywróć poprzedni status
-    () => {
-      const originalStatus = allRequisitions.find(
-        req => req.id === requisitionId && req.id !== newStatus
-      )?.status || 'to_accept';
-
-      // Przywróć stan w kolumnie Status
-      setAllRequisitions(prevReqs =>
-        prevReqs.map(req =>
-          req.id === requisitionId ? { ...req, status: originalStatus } : req
-        )
-      );
-
-      // Przywróć stan w dropdownie
-      setSelectedStatuses(prev => ({
-        ...prev,
-        [requisitionId]: originalStatus
-      }));
-    }
-  );
-};
+    );
+  };
 
   const getStatusIcon = (status) => {
     switch(status) {
@@ -247,7 +198,7 @@ const WarehouseRequisitionsPage = () => {
   };
 
   // Sortowanie zapotrzebowań
-  const sortedRequisitions = [...allRequisitions].sort((a, b) => {
+  const sortedRequisitions = [...requisitions].sort((a, b) => {
     let aValue = a[sortField];
     let bValue = b[sortField];
 
@@ -392,7 +343,7 @@ const WarehouseRequisitionsPage = () => {
           </div>
         </div>
 
-        {loading && allRequisitions.length === 0 ? (
+        {loading && requisitions.length === 0 ? (
           <div className="flex justify-center p-8">
             <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-orange-500"></div>
           </div>
@@ -462,8 +413,11 @@ const WarehouseRequisitionsPage = () => {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center">
-                          {getStatusIcon(requisition.status)}
-                          <span className="ml-2">{getStatusText(requisition.status)}</span>
+                          {getStatusIcon(selectedStatuses[requisition.id] || requisition.status)}
+                          <span className="ml-2">{getStatusText(selectedStatuses[requisition.id] || requisition.status)}</span>
+                          {statusUpdating[requisition.id] && (
+                            <div className="ml-2 animate-spin h-4 w-4 border-2 border-orange-500 rounded-full border-t-transparent"></div>
+                          )}
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
@@ -491,13 +445,17 @@ const WarehouseRequisitionsPage = () => {
                             onClick={() => navigate(`/dashboard/warehouse/requisitions/${requisition.id}`)}
                             className="text-blue-600 hover:text-blue-900 p-1"
                             title="Zobacz szczegóły"
+                            disabled={statusUpdating[requisition.id]}
                           >
                             <Eye size={18} />
                           </button>
                           <select
                             value={selectedStatuses[requisition.id] || requisition.status}
                             onChange={(e) => handleStatusChange(requisition.id, e.target.value)}
-                            className="text-sm border rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-orange-500"
+                            className={`text-sm border rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-orange-500 ${
+                              statusUpdating[requisition.id] ? 'opacity-50 cursor-not-allowed' : ''
+                            }`}
+                            disabled={statusUpdating[requisition.id]}
                           >
                             <option value="to_accept">Do akceptacji</option>
                             <option value="accepted">Zaakceptowano</option>
@@ -587,9 +545,9 @@ const WarehouseRequisitionsPage = () => {
           </div>
         )}
 
-        {/* Wskaźnik ładowania dla operacji aktualizacji */}
-        {loading && allRequisitions.length > 0 && (
-          <div className="fixed bottom-4 right-4 bg-white p-2 rounded-full shadow-lg">
+        {/* Wskaźnik ładowania dla operacji odświeżania */}
+        {loading && requisitions.length > 0 && (
+          <div className="fixed bottom-4 right-4 bg-white p-2 rounded-full shadow-lg z-10">
             <div className="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-orange-500"></div>
           </div>
         )}

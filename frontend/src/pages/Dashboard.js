@@ -1,6 +1,5 @@
-// Modyfikacja pliku frontend/src/pages/Dashboard.js
-
-import React, { useState } from 'react';
+// frontend/src/pages/Dashboard.js
+import React, { useState, memo } from 'react';
 import { useNavigate, Routes, Route, NavLink } from 'react-router-dom';
 import {
   LayoutDashboard,
@@ -30,7 +29,7 @@ import { RequisitionProvider } from '../contexts/RequisitionContext';
 import { getCsrfToken } from '../utils/csrfToken';
 
 // Komponenty pomocnicze
-const SidebarItem = ({ icon: Icon, label, isExpanded, to }) => (
+const SidebarItem = memo(({ icon: Icon, label, isExpanded, to }) => (
   <NavLink
     to={to}
     className={({ isActive }) => `flex items-center p-3 cursor-pointer hover:bg-orange-50 ${
@@ -40,9 +39,10 @@ const SidebarItem = ({ icon: Icon, label, isExpanded, to }) => (
     <Icon className="mr-3" size={20} />
     {isExpanded && <span className="text-sm font-medium">{label}</span>}
   </NavLink>
-);
+));
 
-const BusinessDashboard = ({ setIsAuthenticated }) => {
+// Główny komponent Dashboard
+const BusinessDashboard = memo(({ setIsAuthenticated }) => {
   const [isSidebarExpanded, setIsSidebarExpanded] = useState(true);
   const navigate = useNavigate();
 
@@ -150,6 +150,6 @@ const BusinessDashboard = ({ setIsAuthenticated }) => {
       </ClientProvider>
     </ProjectProvider>
   );
-};
+});
 
 export default BusinessDashboard;

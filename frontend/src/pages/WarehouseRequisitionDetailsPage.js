@@ -4,7 +4,6 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   AlertCircle,
   ArrowLeft,
-  Save,
   CheckCircle,
   Clock,
   XCircle,
@@ -18,11 +17,12 @@ const WarehouseRequisitionDetailsPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { confirmDialog } = useDialog();
-  const { refreshRequisitions } = useRequisitions();
+  const { updateSingleRequisition } = useRequisitions();
 
   const [requisition, setRequisition] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [statusLoading, setStatusLoading] = useState(false);
 
   useEffect(() => {
     fetchRequisition();
@@ -50,69 +50,89 @@ const WarehouseRequisitionDetailsPage = () => {
     }
   };
 
-const handleStatusChange = async (newStatus) => {
-  const statusLabels = {
-    'to_accept': 'Do akceptacji',
-    'accepted': 'Zaakceptowano',
-    'rejected': 'Odrzucono',
-    'in_progress': 'W trakcie realizacji',
-    'completed': 'Zrealizowano'
-  };
+  const handleStatusChange = async (newStatus) => {
+    const statusLabels = {
+      'to_accept': 'Do akceptacji',
+      'accepted': 'Zaakceptowano',
+      'rejected': 'Odrzucono',
+      'in_progress': 'W trakcie realizacji',
+      'completed': 'Zrealizowano'
+    };
 
-  confirmDialog(
-    `Czy chcesz zmienić status zapotrzebowania na "${statusLabels[newStatus]}"?`,
-    async () => {
-      try {
-        setLoading(true);
+    // Zapamiętaj obecny status przed zmianą
+    const currentStatus = requisition.status;
 
-        // Pobierz token CSRF przed wysłaniem żądania
-        const csrfToken = getCsrfToken();
+    // Natychmiast aktualizuj UI, aby uniknąć opóźnień
+    setRequisition(prev => ({
+      ...prev,
+      status: newStatus
+    }));
 
-        const response = await fetch(`/api/requisitions/${id}/`, {
-          method: 'PATCH',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-CSRFToken': csrfToken,
-          },
-          body: JSON.stringify({ status: newStatus }),
-          credentials: 'same-origin',
-        });
-
-        let responseData;
+    confirmDialog(
+      `Czy chcesz zmienić status zapotrzebowania na "${statusLabels[newStatus]}"?`,
+      async () => {
         try {
-          responseData = await response.json();
-        } catch (jsonError) {
-          console.error('Błąd parsowania odpowiedzi JSON:', jsonError);
-          responseData = {};
+          setStatusLoading(true);
+
+          // Pobierz token CSRF przed wysłaniem żądania
+          const csrfToken = getCsrfToken();
+
+          const response = await fetch(`/api/requisitions/${id}/`, {
+            method: 'PATCH',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-CSRFToken': csrfToken,
+            },
+            body: JSON.stringify({ status: newStatus }),
+            credentials: 'same-origin',
+          });
+
+          let responseData;
+          try {
+            responseData = await response.json();
+          } catch (jsonError) {
+            console.error('Błąd parsowania odpowiedzi JSON:', jsonError);
+            responseData = {};
+          }
+
+          if (!response.ok) {
+            throw new Error(`Błąd aktualizacji statusu: ${response.status} ${JSON.stringify(responseData)}`);
+          }
+
+          // Aktualizuj lokalny stan
+          setRequisition(prev => ({
+            ...prev,
+            status: newStatus
+          }));
+
+          // Aktualizuj globalną listę zapotrzebowań, ale tylko to konkretne zapotrzebowanie
+          updateSingleRequisition({
+            ...requisition,
+            status: newStatus
+          });
+
+        } catch (err) {
+          console.error('Błąd:', err);
+          setError('Nie udało się zaktualizować statusu. Spróbuj ponownie później.');
+
+          // Przywróć poprzedni status w UI w przypadku błędu
+          setRequisition(prev => ({
+            ...prev,
+            status: currentStatus
+          }));
+        } finally {
+          setStatusLoading(false);
         }
-
-        if (!response.ok) {
-          throw new Error(`Błąd aktualizacji statusu: ${response.status} ${JSON.stringify(responseData)}`);
-        }
-
-        console.log('Odpowiedź serwera po zmianie statusu:', responseData);
-
-        // Aktualizuj lokalny stan
+      },
+      // Callback w przypadku kliknięcia "Anuluj" - przywróć poprzedni status
+      () => {
         setRequisition(prev => ({
           ...prev,
-          status: newStatus
+          status: currentStatus
         }));
-
-        // Odśwież globalny kontekst zapotrzebowań
-        refreshRequisitions();
-
-        // Ponownie pobierz dane zapotrzebowania, aby upewnić się że mamy aktualne dane
-        await fetchRequisition();
-
-      } catch (err) {
-        console.error('Błąd:', err);
-        setError('Nie udało się zaktualizować statusu. Spróbuj ponownie później.');
-      } finally {
-        setLoading(false);
       }
-    }
-  );
-};
+    );
+  };
 
   const getStatusIcon = (status) => {
     switch(status) {
@@ -205,6 +225,9 @@ const handleStatusChange = async (newStatus) => {
             <div className="mt-1 flex items-center">
               {getStatusIcon(requisition.status)}
               <span className="ml-2 text-lg">{getStatusText(requisition.status)}</span>
+              {statusLoading && (
+                <div className="ml-2 animate-spin h-4 w-4 border-2 border-orange-500 rounded-full border-t-transparent"></div>
+              )}
             </div>
           </div>
           <div>
@@ -234,7 +257,8 @@ const handleStatusChange = async (newStatus) => {
               id="status"
               value={requisition.status}
               onChange={(e) => handleStatusChange(e.target.value)}
-              className="border border-gray-300 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-orange-500"
+              disabled={statusLoading}
+              className={`border border-gray-300 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-orange-500 ${statusLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               <option value="to_accept">Do akceptacji</option>
               <option value="accepted">Zaakceptowano</option>
