@@ -1,3 +1,4 @@
+// frontend/src/pages/MaterialRequisitionsPage.js
 import React, { useState, useRef, memo, useEffect, useMemo } from 'react';
 import { Routes, Route, useNavigate } from 'react-router-dom';
 import {
@@ -8,11 +9,14 @@ import {
   Clock,
   CheckCircle,
   XCircle,
-  Loader
+  Loader,
+  Eye,
+  Check
 } from 'lucide-react';
 import MaterialRequisitionForm from '../components/MaterialRequisitionForm';
 import { useRequisitions } from '../contexts/RequisitionContext';
 import { useDialog } from '../contexts/DialogContext';
+import { getCsrfToken } from '../utils/csrfToken';
 
 const MaterialRequisitionsPage = memo(() => {
   const {
@@ -23,7 +27,7 @@ const MaterialRequisitionsPage = memo(() => {
     updateSingleRequisition
   } = useRequisitions();
 
-  const { showInfo } = useDialog();
+  const { showInfo, confirm } = useDialog();
 
   const [searchTerm, setSearchTerm] = useState('');
   const [sortField, setSortField] = useState('created_at');
@@ -31,6 +35,9 @@ const MaterialRequisitionsPage = memo(() => {
   const [statusFilter, setStatusFilter] = useState('all');
   const [localStatuses, setLocalStatuses] = useState({});
   const [isInitialized, setIsInitialized] = useState(false);
+  const [expandedRequisition, setExpandedRequisition] = useState(null);
+  const [requisitionDetails, setRequisitionDetails] = useState({});
+  const [statusUpdating, setStatusUpdating] = useState({});
 
   const mountedRef = useRef(true);
   const navigate = useNavigate();
@@ -58,6 +65,33 @@ const MaterialRequisitionsPage = memo(() => {
     });
     setLocalStatuses(newLocalStatuses);
   }, [requisitions]);
+
+  // Efekt pobierający szczegóły konkretnego zapotrzebowania po rozwinięciu
+  useEffect(() => {
+    if (expandedRequisition && !requisitionDetails[expandedRequisition]) {
+      fetchRequisitionDetails(expandedRequisition);
+    }
+  }, [expandedRequisition]);
+
+  const fetchRequisitionDetails = async (requisitionId) => {
+    try {
+      const response = await fetch(`/api/requisitions/${requisitionId}/`, {
+        credentials: 'same-origin',
+      });
+
+      if (!response.ok) {
+        throw new Error('Błąd pobierania szczegółów zapotrzebowania');
+      }
+
+      const data = await response.json();
+      setRequisitionDetails(prev => ({
+        ...prev,
+        [requisitionId]: data
+      }));
+    } catch (err) {
+      console.error('Błąd pobierania szczegółów:', err);
+    }
+  };
 
   const getStatusIcon = (status) => {
     switch(status) {
@@ -95,11 +129,83 @@ const MaterialRequisitionsPage = memo(() => {
       setSortDirection('asc');
     }
   };
+
+  const handleCompleteRequisition = async (requisitionId) => {
+    // Znajdź pełen obiekt zapotrzebowania
+    const requisition = requisitions.find(req => req.id === requisitionId);
+    if (!requisition) return;
+
+    // Zapamiętaj obecny status przed zmianą
+    const previousStatus = requisition.status;
+
+    // Pokaz komunikat potwierdzenia
+    confirm(
+      "Czy na pewno chcesz oznaczać zapotrzebowanie jako zrealizowane?",
+      async () => {
+        try {
+          // Pokaż wskaźnik ładowania dla tego konkretnego wiersza
+          setStatusUpdating(prev => ({ ...prev, [requisitionId]: true }));
+
+          // Natychmiast aktualizuj status w UI
+          setLocalStatuses(prev => ({
+            ...prev,
+            [requisitionId]: 'completed'
+          }));
+
+          const csrfToken = getCsrfToken();
+          const response = await fetch(`/api/requisitions/${requisitionId}/`, {
+            method: 'PATCH',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-CSRFToken': csrfToken,
+            },
+            body: JSON.stringify({ status: 'completed' }),
+            credentials: 'same-origin',
+          });
+
+          if (!response.ok) {
+            throw new Error(`Błąd serwera: ${response.status}`);
+          }
+
+          // Pobierz zaktualizowane dane
+          const responseData = await response.json();
+
+          // Aktualizuj pojedyncze zapotrzebowanie w kontekście
+          updateSingleRequisition({
+            ...requisition,
+            status: 'completed'
+          });
+
+          // Pokaż komunikat o sukcesie
+          showInfo("Zapotrzebowanie zostało oznaczone jako zrealizowane");
+        } catch (err) {
+          console.error('Błąd podczas zmiany statusu:', err);
+
+          // Przywróć poprzedni status w UI
+          setLocalStatuses(prev => ({
+            ...prev,
+            [requisitionId]: previousStatus
+          }));
+
+          // Pokaż komunikat o błędzie
+          showInfo("Wystąpił błąd podczas zmiany statusu", { type: "warning" });
+        } finally {
+          // Usuń wskaźnik ładowania
+          setStatusUpdating(prev => ({ ...prev, [requisitionId]: false }));
+        }
+      }
+    );
+  };
+
   // Filtruj i sortuj zapotrzebowania materiałowe
   const filteredRequisitions = useMemo(() => {
+    // Filtruj tylko zapotrzebowania typu "material"
     const materialReqs = requisitions.filter(req => req.requisition_type === 'material');
 
-    const sortableReqs = [...materialReqs];
+    // Filtruj tylko zapotrzebowania utworzone przez aktualnego użytkownika
+    const userReqs = materialReqs.filter(req => req.created_by === req.current_user_id);
+
+    const sortableReqs = [...userReqs];
 
     // Sortowanie
     sortableReqs.sort((a, b) => {
@@ -310,36 +416,152 @@ const MainView = memo(() => (
                       {sortField === 'created_at' && <ArrowUpDown className="ml-1" size={14} />}
                     </div>
                   </th>
+                  <th scope="col" className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Akcje
+                  </th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {filteredRequisitions.map((requisition) => (
-                  <tr key={requisition.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="font-medium text-gray-900">{requisition.number}</div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-gray-500">{requisition.project_name || '-'}</div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-gray-500">
-                        {requisition.deadline ? new Date(requisition.deadline).toLocaleDateString() : '-'}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center">
-                        {getStatusIcon(localStatuses[requisition.id] || requisition.status)}
-                        <span className="ml-2">
-                          {getStatusText(localStatuses[requisition.id] || requisition.status)}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-gray-500">
-                        {requisition.created_at ? new Date(requisition.created_at).toLocaleDateString() : '-'}
-                      </div>
-                    </td>
-                  </tr>
+                  <React.Fragment key={requisition.id}>
+                    <tr className={`hover:bg-gray-50 ${expandedRequisition === requisition.id ? 'bg-gray-50' : ''}`}>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="font-medium text-gray-900">{requisition.number}</div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-gray-500">{requisition.project_name || '-'}</div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-gray-500">
+                          {requisition.deadline ? new Date(requisition.deadline).toLocaleDateString() : '-'}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="flex items-center">
+                          {getStatusIcon(localStatuses[requisition.id] || requisition.status)}
+                          <span className="ml-2">
+                            {getStatusText(localStatuses[requisition.id] || requisition.status)}
+                          </span>
+                          {statusUpdating[requisition.id] && (
+                            <div className="ml-2 animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-orange-500"></div>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-gray-500">
+                          {requisition.created_at ? new Date(requisition.created_at).toLocaleDateString() : '-'}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="flex items-center justify-center space-x-2">
+                          <button
+                            onClick={() => setExpandedRequisition(expandedRequisition === requisition.id ? null : requisition.id)}
+                            className="text-blue-600 hover:text-blue-900 p-1"
+                            title="Pokaż/ukryj przedmioty"
+                          >
+                            {expandedRequisition === requisition.id ?
+                              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M18 15l-6-6-6 6"></path>
+                              </svg> :
+                              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M6 9l6 6 6-6"></path>
+                              </svg>
+                            }
+                          </button>
+                          <button
+                            onClick={() => navigate(`/dashboard/requests/material/${requisition.id}`)}
+                            className="text-blue-600 hover:text-blue-900 p-1"
+                            title="Zobacz szczegóły"
+                          >
+                            <Eye size={18} />
+                          </button>
+                          {localStatuses[requisition.id] !== 'completed' && localStatuses[requisition.id] !== 'rejected' && (
+                            <button
+                              onClick={() => handleCompleteRequisition(requisition.id)}
+                              className="flex items-center bg-green-500 text-white px-2 py-1 rounded text-sm hover:bg-green-600 transition-colors"
+                              title="Oznacz jako zrealizowane"
+                              disabled={statusUpdating[requisition.id]}
+                            >
+                              <Check size={14} className="mr-1" />
+                              Zrealizowano
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                    {expandedRequisition === requisition.id && (
+                      <tr>
+                        <td colSpan="6" className="px-6 py-4 bg-gray-50 border-t border-gray-200">
+                          {requisitionDetails[requisition.id] ? (
+                            <div>
+                              <h3 className="font-medium text-gray-900 mb-2">Przedmioty w zapotrzebowaniu:</h3>
+                              {requisitionDetails[requisition.id].items && requisitionDetails[requisition.id].items.length > 0 ? (
+                                <div className="overflow-x-auto">
+                                  <table className="min-w-full divide-y divide-gray-200 border border-gray-200 rounded-lg">
+                                    <thead className="bg-gray-100">
+                                      <tr>
+                                        <th scope="col" className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                          Indeks
+                                        </th>
+                                        <th scope="col" className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                          Nazwa przedmiotu
+                                        </th>
+                                        <th scope="col" className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                          Ilość
+                                        </th>
+                                        <th scope="col" className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                          Cena jedn.
+                                        </th>
+                                        <th scope="col" className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                          Wartość
+                                        </th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="bg-white divide-y divide-gray-200">
+                                      {requisitionDetails[requisition.id].items.map((item, idx) => (
+                                        <tr key={item.id || idx} className="hover:bg-gray-50">
+                                          <td className="px-4 py-2 whitespace-nowrap text-sm">
+                                            {item.item_index}
+                                          </td>
+                                          <td className="px-4 py-2 whitespace-nowrap text-sm font-medium">
+                                            {item.item_name}
+                                          </td>
+                                          <td className="px-4 py-2 whitespace-nowrap text-sm">
+                                            {item.quantity}
+                                          </td>
+                                          <td className="px-4 py-2 whitespace-nowrap text-sm">
+                                            {item.price ? `${parseFloat(item.price).toLocaleString()} zł` : '-'}
+                                          </td>
+                                          <td className="px-4 py-2 whitespace-nowrap text-sm">
+                                            {item.price ? `${(parseFloat(item.price) * item.quantity).toLocaleString()} zł` : '-'}
+                                          </td>
+                                        </tr>
+                                      ))}
+                                      <tr className="bg-gray-50 font-medium">
+                                        <td colSpan="4" className="px-4 py-2 text-right">
+                                          Razem:
+                                        </td>
+                                        <td className="px-4 py-2 whitespace-nowrap">
+                                          {requisitionDetails[requisition.id].total_price !== undefined ?
+                                            `${parseFloat(requisitionDetails[requisition.id].total_price).toLocaleString()} zł` : '-'}
+                                        </td>
+                                      </tr>
+                                    </tbody>
+                                  </table>
+                                </div>
+                              ) : (
+                                <p className="text-gray-500">Brak przedmiotów w zapotrzebowaniu</p>
+                              )}
+                            </div>
+                          ) : (
+                            <div className="flex justify-center p-4">
+                              <div className="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-orange-500"></div>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
                 ))}
               </tbody>
             </table>

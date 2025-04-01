@@ -339,7 +339,13 @@ class RequisitionViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         """Filtruj zapotrzebowania z obsługą wyszukiwania po przedmiotach"""
-        queryset = Requisition.objects.all().order_by('-created_at')
+        user = self.request.user
+        # Użytkownicy z uprawnieniem 'view_all_requisitions' lub admin mogą widzieć wszystkie zapotrzebowania
+        if user.is_staff or hasattr(user, 'profile') and user.profile.has_privilege('view_all_requisitions'):
+            queryset = Requisition.objects.all().order_by('-created_at')
+        else:
+            # Pozostali użytkownicy widzą tylko swoje zapotrzebowania
+            queryset = Requisition.objects.filter(created_by=user).order_by('-created_at')
 
         # Filtruj po typie zapotrzebowania
         requisition_type = self.request.query_params.get('requisition_type', None)
@@ -366,6 +372,12 @@ class RequisitionViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(basic_search | Q(id__in=items_search))
 
         return queryset.distinct()
+
+    def get_serializer_context(self):
+        """Dodaj request do kontekstu serializera, aby mieć dostęp do aktualnego użytkownika"""
+        context = super().get_serializer_context()
+        context['request'] = self.request
+        return context
 
     def perform_create(self, serializer):
         """

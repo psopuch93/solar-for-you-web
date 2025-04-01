@@ -228,13 +228,15 @@ class RequisitionSerializer(serializers.ModelSerializer):
     type_display = serializers.CharField(source='get_requisition_type_display', read_only=True)
     status_display = serializers.SerializerMethodField()
     total_price = serializers.SerializerMethodField()
+    current_user_id = serializers.SerializerMethodField()
 
     class Meta:
         model = Requisition
         fields = ('id', 'number', 'project', 'project_name', 'deadline',
                   'requisition_type', 'type_display', 'status', 'status_display',
                   'comment', 'items', 'total_price', 'created_at', 'updated_at',
-                  'created_by', 'created_by_name', 'updated_by', 'updated_by_name')
+                  'created_by', 'created_by_name', 'updated_by', 'updated_by_name',
+                  'current_user_id')
         read_only_fields = ('id', 'number', 'created_at', 'updated_at', 'created_by', 'updated_by')
         extra_kwargs = {
             'status': {
@@ -253,6 +255,13 @@ class RequisitionSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(f"Niedozwolony status: {value}")
 
         return value
+
+    def get_current_user_id(self, obj):
+        """Zwraca ID aktualnie zalogowanego użytkownika"""
+        request = self.context.get('request')
+        if request and hasattr(request, 'user'):
+            return request.user.id
+        return None
 
     def get_created_by_name(self, obj):
         return obj.created_by.get_full_name() if obj.created_by else '-'
