@@ -12,11 +12,11 @@ from django.db.models import Q
 from django.utils.decorators import method_decorator
 import datetime
 import json
-from .models import UserProfile, Project, Client, ProjectTag, Employee, Empl_tag, Requisition, Item, RequisitionItem
+from .models import UserProfile, Project, Client, ProjectTag, Employee, Empl_tag, Requisition, Item, RequisitionItem, Quarter
 from .serializers import (
     UserSerializer, UserProfileSerializer, ProjectSerializer,
     ClientSerializer, ProjectTagSerializer, EmployeeSerializer, EmplTagSerializer,
-    ItemSerializer, RequisitionSerializer, RequisitionItemSerializer
+    ItemSerializer, RequisitionSerializer, RequisitionItemSerializer, QuarterSerializer
 )
 
 class IsAdminOrOwner(permissions.BasePermission):
@@ -672,3 +672,101 @@ def validate_requisition(request):
         'valid': True,
         'message': 'Dane zapotrzebowania są poprawne'
     })
+
+# Add this to api/views.py
+
+class QuarterViewSet(viewsets.ModelViewSet):
+    """API endpoint for Quarters"""
+    queryset = Quarter.objects.all()
+    serializer_class = QuarterSerializer
+    permission_classes = [permissions.IsAuthenticated, HasModulePrivilege]
+    required_privilege = 'manage_quarters'  # You can define this privilege
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user, updated_by=self.request.user)
+
+    def perform_update(self, serializer):
+        serializer.save(updated_by=self.request.user)
+
+# Add these additional methods to help with quarter assignments
+
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+def assign_employee_to_quarter(request):
+    """Assign an employee to a quarter"""
+    employee_id = request.data.get('employee_id')
+    quarter_id = request.data.get('quarter_id')
+
+    if not employee_id or not quarter_id:
+        return Response({
+            'success': False,
+            'message': 'Both employee_id and quarter_id are required'
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        employee = Employee.objects.get(id=employee_id)
+        quarter = Quarter.objects.get(id=quarter_id)
+
+        # Check if quarter has space
+        if quarter.employees.count() >= quarter.max_occupants:
+            return Response({
+                'success': False,
+                'message': f'Quarter {quarter.name} is already at maximum capacity ({quarter.max_occupants} occupants)'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Assign employee to quarter
+        employee.quarter = quarter
+        employee.save()
+
+        return Response({
+            'success': True,
+            'message': f'Employee {employee.first_name} {employee.last_name} assigned to {quarter.name}'
+        })
+
+    except Employee.DoesNotExist:
+        return Response({
+            'success': False,
+            'message': 'Employee not found'
+        }, status=status.HTTP_404_NOT_FOUND)
+
+    except Quarter.DoesNotExist:
+        return Response({
+            'success': False,
+            'message': 'Quarter not found'
+        }, status=status.HTTP_404_NOT_FOUND)
+
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+def remove_employee_from_quarter(request):
+    """Remove an employee from a quarter"""
+    employee_id = request.data.get('employee_id')
+
+    if not employee_id:
+        return Response({
+            'success': False,
+            'message': 'employee_id is required'
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        employee = Employee.objects.get(id=employee_id)
+
+        if not employee.quarter:
+            return Response({
+                'success': False,
+                'message': f'Employee {employee.first_name} {employee.last_name} is not assigned to any quarter'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        quarter_name = employee.quarter.name
+        employee.quarter = None
+        employee.save()
+
+        return Response({
+            'success': True,
+            'message': f'Employee {employee.first_name} {employee.last_name} removed from {quarter_name}'
+        })
+
+    except Employee.DoesNotExist:
+        return Response({
+            'success': False,
+            'message': 'Employee not found'
+        }, status=status.HTTP_404_NOT_FOUND)

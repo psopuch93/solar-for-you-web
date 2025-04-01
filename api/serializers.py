@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
-from .models import UserProfile, Project, Client, ProjectTag, Empl_tag, Employee, Requisition, RequisitionItem, Item
+from .models import UserProfile, Project, Client, ProjectTag, Empl_tag, Employee, Requisition, RequisitionItem, Item, Quarter
 
 class UserSerializer(serializers.ModelSerializer):
     """Serializer dla modelu User"""
@@ -144,6 +144,7 @@ class EmployeeSerializer(serializers.ModelSerializer):
     updated_by_name = serializers.SerializerMethodField()
     tag_serial = serializers.SerializerMethodField()
     full_name = serializers.SerializerMethodField()
+    quarter_name = serializers.SerializerMethodField()
 
     class Meta:
         model = Employee
@@ -151,7 +152,7 @@ class EmployeeSerializer(serializers.ModelSerializer):
                   'current_project', 'project_name',
                   'employee_tag', 'tag_serial',
                   'created_at', 'updated_at', 'created_by', 'created_by_name',
-                  'updated_by', 'updated_by_name')
+                  'updated_by', 'updated_by_name', 'quarter', 'quarter_name',)
         read_only_fields = ('id', 'created_at', 'updated_at', 'created_by', 'updated_by')
         # Dodanie niestandardowej walidacji błędów
         extra_kwargs = {
@@ -180,6 +181,12 @@ class EmployeeSerializer(serializers.ModelSerializer):
 
     def get_tag_serial(self, obj):
         return obj.employee_tag.serial if obj.employee_tag else None
+
+    def get_quarter_name(self, obj):
+        try:
+            return obj.quarter.name if obj.quarter else None
+        except AttributeError:
+            return None
 
 class ItemSerializer(serializers.ModelSerializer):
     """Serializer dla modelu Item"""
@@ -292,3 +299,29 @@ class RequisitionSerializer(serializers.ModelSerializer):
             'completed': 'Zrealizowano'
         }
         return status_map.get(obj.status, obj.status)
+
+class QuarterSerializer(serializers.ModelSerializer):
+    """Serializer for Quarter model"""
+    created_by_name = serializers.SerializerMethodField()
+    updated_by_name = serializers.SerializerMethodField()
+    occupants_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Quarter
+        fields = ('id', 'name', 'address', 'city', 'country', 'payment_day', 'max_occupants',
+                  'created_at', 'updated_at', 'created_by', 'created_by_name',
+                  'updated_by', 'updated_by_name', 'occupants_count')
+        read_only_fields = ('id', 'created_at', 'updated_at', 'created_by', 'updated_by')
+
+    def get_created_by_name(self, obj):
+        if obj.created_by:
+            return f"{obj.created_by.first_name} {obj.created_by.last_name}".strip() or obj.created_by.username
+        return None
+
+    def get_updated_by_name(self, obj):
+        if obj.updated_by:
+            return f"{obj.updated_by.first_name} {obj.updated_by.last_name}".strip() or obj.updated_by.username
+        return None
+
+    def get_occupants_count(self, obj):
+        return obj.employees.count()

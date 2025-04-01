@@ -6,12 +6,14 @@ import {
   ArrowLeftRight,
   Clipboard,
   Truck,
+  Home,
   ChevronRight
 } from 'lucide-react';
 import WarehouseEquipmentPage from './WarehouseEquipmentPage';
 import WarehouseTransfersPage from './WarehouseTransfersPage';
 import WarehouseRequisitionsPage from './WarehouseRequisitionsPage';
 import WarehouseFleetPage from './WarehouseFleetPage';
+import WarehouseQuartersPage from './WarehouseQuartersPage';
 
 const WarehousePage = () => {
   const navigate = useNavigate();
@@ -48,6 +50,14 @@ const WarehousePage = () => {
       icon: Truck,
       color: 'bg-purple-500',
       path: '/dashboard/warehouse/fleet'
+    },
+    {
+      id: 'quarters',
+      name: 'Kwatery',
+      description: 'Zarządzanie kwaterami pracowniczymi, rezerwacje, przydziały',
+      icon: Home,
+      color: 'bg-indigo-500',
+      path: '/dashboard/warehouse/quarters'
     }
   ];
 
@@ -88,6 +98,7 @@ const WarehousePage = () => {
       <Route path="/transfers/*" element={<WarehouseTransfersPage />} />
       <Route path="/requisitions/*" element={<WarehouseRequisitionsPage />} />
       <Route path="/fleet/*" element={<WarehouseFleetPage />} />
+      <Route path="/quarters/*" element={<WarehouseQuartersPage />} />
     </Routes>
   );
 };

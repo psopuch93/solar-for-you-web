@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django import forms
-from .models import UserProfile, Project, Client, ProjectTag, Empl_tag, Employee, Item, Requisition, RequisitionItem
+from .models import UserProfile, Project, Client, ProjectTag, Empl_tag, Employee, Item, Requisition, RequisitionItem, Quarter
 
 class UserProfileAdminForm(forms.ModelForm):
     """Formularz do zarządzania uprawnieniami w adminie"""
@@ -177,6 +177,19 @@ class RequisitionAdmin(admin.ModelAdmin):
     def save_model(self, request, obj, form, change):
         """Automatycznie ustaw użytkownika tworzącego/aktualizującego"""
         if not change:  # Jeśli to nowy obiekt
+            obj.created_by = request.user
+        obj.updated_by = request.user
+        super().save_model(request, obj, form, change)
+
+@admin.register(Quarter)
+class QuarterAdmin(admin.ModelAdmin):
+    list_display = ('name', 'city', 'address', 'max_occupants', 'created_at')
+    list_filter = ('city', 'country', 'created_at')
+    search_fields = ('name', 'address', 'city')
+    readonly_fields = ('created_at', 'updated_at')
+
+    def save_model(self, request, obj, form, change):
+        if not change:  # If this is a new object
             obj.created_by = request.user
         obj.updated_by = request.user
         super().save_model(request, obj, form, change)

@@ -8,7 +8,8 @@ from .views import (
     UserViewSet, UserProfileViewSet, ProjectViewSet, ClientViewSet,
     ProjectTagViewSet, EmplTagViewSet, EmployeeViewSet, check_project_name,
     check_pesel, ItemViewSet, RequisitionViewSet, RequisitionItemViewSet,
-    validate_requisition, export_requisitions
+    validate_requisition, export_requisitions, assign_employee_to_quarter,
+    remove_employee_from_quarter, QuarterViewSet
 )
 
 # Dodaj nową funkcję obsługującą CSRF
@@ -32,6 +33,7 @@ router.register(r'employees', EmployeeViewSet)
 router.register(r'items', ItemViewSet)
 router.register(r'requisitions', RequisitionViewSet)
 router.register(r'requisition-items', RequisitionItemViewSet)
+router.register(r'quarters', QuarterViewSet)
 
 urlpatterns = [
     # Dołącz ścieżki routera
@@ -44,4 +46,6 @@ urlpatterns = [
     path('export-requisitions/', export_requisitions, name='export_requisitions'),
     # Dodaj nowy endpoint dla CSRF
     path('csrf/', get_csrf_token, name='get_csrf_token'),
+    path('assign-employee-to-quarter/', assign_employee_to_quarter, name='assign_employee_to_quarter'),
+    path('remove-employee-from-quarter/', remove_employee_from_quarter, name='remove_employee_from_quarter'),
 ]

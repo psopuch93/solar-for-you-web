@@ -151,6 +151,27 @@ class Empl_tag(models.Model):
         verbose_name = "Employee Tag"
         verbose_name_plural = "Employee Tags"
 
+class Quarter(models.Model):
+    """Model for employee housing quarters"""
+    name = models.CharField(max_length=200, verbose_name="Nazwa kwatery")
+    address = models.TextField(verbose_name="Adres")
+    city = models.CharField(max_length=100, verbose_name="Miasto")
+    country = models.CharField(max_length=100, default="Polska", verbose_name="Kraj")
+    payment_day = models.PositiveSmallIntegerField(default=1, verbose_name="Dzień płatności")
+    max_occupants = models.PositiveSmallIntegerField(default=1, verbose_name="Maksymalna liczba osób")
+
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Data utworzenia")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Data aktualizacji")
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='created_quarters', verbose_name="Utworzony przez")
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='updated_quarters', verbose_name="Zaktualizowany przez")
+
+    def __str__(self):
+        return f"{self.name} ({self.city})"
+
+    class Meta:
+        verbose_name = "Kwatera"
+        verbose_name_plural = "Kwatery"
+
 class Employee(models.Model):
     """Model pracownika"""
     first_name = models.CharField(max_length=100, verbose_name="Imię")
@@ -163,6 +184,7 @@ class Employee(models.Model):
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Data aktualizacji")
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_employees', verbose_name="Utworzony przez")
     updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='updated_employees', verbose_name="Zaktualizowany przez")
+    quarter = models.ForeignKey(Quarter, on_delete=models.SET_NULL, null=True, blank=True, related_name='employees', verbose_name="Przydzielona kwatera")
 
     def __str__(self):
         return f"{self.first_name} {self.last_name}"
