@@ -513,6 +513,121 @@ class RequisitionItemViewSet(viewsets.ModelViewSet):
 
         return response
 
+from django.http import HttpResponse
+import openpyxl
+from openpyxl.styles import Font, Alignment, Border, Side
+import datetime
+
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def export_requisitions(request):
+    """Eksport zapotrzebowań do pliku Excel"""
+    # Parametry filtrowania
+    requisition_type = request.GET.get('type', 'material')
+    status = request.GET.get('status', None)
+    date_from = request.GET.get('date_from', None)
+    date_to = request.GET.get('date_to', None)
+    project_id = request.GET.get('project_id', None)
+
+    # Filtrowanie zapotrzebowań
+    queryset = Requisition.objects.filter(requisition_type=requisition_type).order_by('-created_at')
+
+    # Filtruj po statusie
+    if status and status != 'all':
+        queryset = queryset.filter(status=status)
+
+    # Filtruj po dacie utworzenia
+    if date_from:
+        try:
+            date_from = datetime.datetime.strptime(date_from, '%Y-%m-%d')
+            queryset = queryset.filter(created_at__gte=date_from)
+        except (ValueError, TypeError):
+            pass
+
+    if date_to:
+        try:
+            date_to = datetime.datetime.strptime(date_to, '%Y-%m-%d')
+            date_to = date_to.replace(hour=23, minute=59, second=59)
+            queryset = queryset.filter(created_at__lte=date_to)
+        except (ValueError, TypeError):
+            pass
+
+    # Filtruj po projekcie
+    if project_id:
+        queryset = queryset.filter(project_id=project_id)
+
+    # Tworzenie pliku Excel
+    workbook = openpyxl.Workbook()
+    worksheet = workbook.active
+    worksheet.title = "Zapotrzebowania"
+
+    # Styl nagłówków
+    header_font = Font(bold=True)
+    header_alignment = Alignment(horizontal='center')
+    thin_border = Border(
+        left=Side(style='thin'),
+        right=Side(style='thin'),
+        top=Side(style='thin'),
+        bottom=Side(style='thin')
+    )
+
+    # Nagłówki
+    headers = [
+        'Numer', 'Projekt', 'Status', 'Termin realizacji',
+        'Data utworzenia', 'Utworzony przez', 'Wartość', 'Komentarz'
+    ]
+
+    for col_num, header in enumerate(headers, 1):
+        cell = worksheet.cell(row=1, column=col_num)
+        cell.value = header
+        cell.font = header_font
+        cell.alignment = header_alignment
+        cell.border = thin_border
+
+    # Szerokości kolumn
+    column_widths = [15, 25, 15, 15, 15, 20, 15, 40]
+    for i, width in enumerate(column_widths, 1):
+        worksheet.column_dimensions[openpyxl.utils.get_column_letter(i)].width = width
+
+    # Dodawanie danych
+    status_map = {
+        'to_accept': 'Do akceptacji',
+        'accepted': 'Zaakceptowano',
+        'rejected': 'Odrzucono',
+        'in_progress': 'W trakcie realizacji',
+        'completed': 'Zrealizowano'
+    }
+
+    for row_num, req in enumerate(queryset, 2):
+        # Oblicz całkowitą wartość
+        total_value = sum(
+            item.price * item.quantity for item in req.items.all() if item.price
+        )
+
+        # Zapełnij wiersz danymi
+        worksheet.cell(row=row_num, column=1).value = req.number
+        worksheet.cell(row=row_num, column=2).value = req.project.name if req.project else '-'
+        worksheet.cell(row=row_num, column=3).value = status_map.get(req.status, req.status)
+        worksheet.cell(row=row_num, column=4).value = req.deadline.strftime('%Y-%m-%d') if req.deadline else '-'
+        worksheet.cell(row=row_num, column=5).value = req.created_at.strftime('%Y-%m-%d') if req.created_at else '-'
+        worksheet.cell(row=row_num, column=6).value = f"{req.created_by.first_name} {req.created_by.last_name}".strip() if req.created_by else '-'
+        worksheet.cell(row=row_num, column=7).value = float(total_value)
+        worksheet.cell(row=row_num, column=8).value = req.comment or '-'
+
+        # Ustaw obramowanie dla wszystkich komórek
+        for col_num in range(1, len(headers) + 1):
+            worksheet.cell(row=row_num, column=col_num).border = thin_border
+
+    # Zapisz do tymczasowego pliku
+    response = HttpResponse(
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+    filename = f"zapotrzebowania_{datetime.datetime.now().strftime('%Y-%m-%d')}.xlsx"
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    workbook.save(response)
+
+    return response
+
 @api_view(['POST'])
 @ensure_csrf_cookie
 @permission_classes([permissions.IsAuthenticated])

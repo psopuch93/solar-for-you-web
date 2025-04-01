@@ -4,7 +4,12 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.http import JsonResponse
-from .views import UserViewSet, UserProfileViewSet, ProjectViewSet, ClientViewSet, ProjectTagViewSet, EmplTagViewSet, EmployeeViewSet, check_project_name, check_pesel, ItemViewSet, RequisitionViewSet, RequisitionItemViewSet, validate_requisition
+from .views import (
+    UserViewSet, UserProfileViewSet, ProjectViewSet, ClientViewSet,
+    ProjectTagViewSet, EmplTagViewSet, EmployeeViewSet, check_project_name,
+    check_pesel, ItemViewSet, RequisitionViewSet, RequisitionItemViewSet,
+    validate_requisition, export_requisitions
+)
 
 # Dodaj nową funkcję obsługującą CSRF
 @ensure_csrf_cookie
@@ -35,6 +40,8 @@ urlpatterns = [
     path('check-project-name/', check_project_name, name='check_project_name'),
     path('check-pesel/', check_pesel, name='check_pesel'),
     path('validate-requisition/', validate_requisition, name='validate_requisition'),
+    # Endpoint do eksportu zapotrzebowań
+    path('export-requisitions/', export_requisitions, name='export_requisitions'),
     # Dodaj nowy endpoint dla CSRF
     path('csrf/', get_csrf_token, name='get_csrf_token'),
 ]
