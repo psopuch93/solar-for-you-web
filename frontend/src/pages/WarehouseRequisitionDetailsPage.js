@@ -16,7 +16,7 @@ import { useDialog } from '../contexts/DialogContext';
 const WarehouseRequisitionDetailsPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { confirmDialog } = useDialog();
+  const { confirm } = useDialog(); // Changed from confirmDialog to confirm
   const { updateSingleRequisition } = useRequisitions();
 
   const [requisition, setRequisition] = useState(null);
@@ -68,7 +68,7 @@ const WarehouseRequisitionDetailsPage = () => {
       status: newStatus
     }));
 
-    confirmDialog(
+    confirm( // Changed from confirmDialog to confirm
       `Czy chcesz zmienić status zapotrzebowania na "${statusLabels[newStatus]}"?`,
       async () => {
         try {

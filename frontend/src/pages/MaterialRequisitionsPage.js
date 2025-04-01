@@ -1,5 +1,5 @@
 // frontend/src/pages/MaterialRequisitionsPage.js
-import React, { useState, useRef, memo } from 'react';
+import React, { useState, useRef, memo, useEffect } from 'react';
 import { Routes, Route, useNavigate } from 'react-router-dom';
 import {
   PlusCircle,
@@ -16,45 +16,56 @@ import {
 } from 'lucide-react';
 import { getCsrfToken } from '../utils/csrfToken';
 import MaterialRequisitionForm from '../components/MaterialRequisitionForm';
-import { useStableRequisitions } from '../components/StableRequisitionsProvider';
+import { useRequisitions } from '../contexts/RequisitionContext'; // Use original context directly
 import { useDialog } from '../contexts/DialogContext';
 
-// Opakowujemy cały komponent w memo, aby blokować odświeżanie gdy props nie ulegają zmianie
+// Wrap the entire component in memo to block refreshes when props don't change
 const MaterialRequisitionsPage = memo(() => {
-  // Użyj stabilnego kontekstu zamiast oryginalnego
+  // Use the original context instead of the stable one
   const {
     requisitions,
     loading,
-    updateSingleRequisition,
-    error
-  } = useStableRequisitions();
+    error,
+    refreshRequisitions,
+    forceRefresh
+  } = useRequisitions();
 
   const { confirmDelete, showInfo } = useDialog();
 
-  // Stan lokalny - nie powoduje ponownego renderowania innych komponentów
+  // Local state - doesn't cause re-renders of other components
   const [searchTerm, setSearchTerm] = useState('');
   const [sortField, setSortField] = useState('created_at');
   const [sortDirection, setSortDirection] = useState('desc');
   const [statusFilter, setStatusFilter] = useState('all');
   const [statusUpdating, setStatusUpdating] = useState({});
+  const [isInitialized, setIsInitialized] = useState(false);
 
-  // Ref do śledzenia czy komponent jest zamontowany
+  // Ref to track if component is mounted
   const mountedRef = useRef(true);
 
   const navigate = useNavigate();
 
-  // Do czyszczenia przy odmontowaniu komponentu
+  // Force refresh on component mount
+  useEffect(() => {
+    if (!isInitialized) {
+      console.log("MaterialRequisitionsPage: Initial load - forcing refresh");
+      forceRefresh(); // Force immediate data refresh
+      setIsInitialized(true);
+    }
+  }, [forceRefresh, isInitialized]);
+
+  // For cleanup when unmounting component
   React.useEffect(() => {
     return () => {
-      // Oznacz komponent jako odmontowany, aby zapobiec aktualizacji stanu
+      // Mark component as unmounted to prevent state updates
       mountedRef.current = false;
     };
   }, []);
 
   const handleDelete = async (id, number) => {
-    confirmDelete({
-      message: `Czy na pewno chcesz usunąć zapotrzebowanie ${number}?`,
-      onConfirm: async () => {
+    confirmDelete(
+      `Czy na pewno chcesz usunąć zapotrzebowanie ${number}?`,
+      async () => {
         try {
           const response = await fetch(`/api/requisitions/${id}/`, {
             method: 'DELETE',
@@ -65,11 +76,15 @@ const MaterialRequisitionsPage = memo(() => {
           });
 
           if (!response.ok) {
-            throw new Error('Błąd usuwania zapotrzebowania');
+            throw new Error(`Błąd usuwania zapotrzebowania: ${response.status}`);
           }
 
           if (mountedRef.current) {
             showInfo("Zapotrzebowanie zostało usunięte");
+            // Force refresh after successful delete
+            setTimeout(() => {
+              forceRefresh();
+            }, 300);
           }
         } catch (err) {
           console.error('Błąd:', err);
@@ -78,7 +93,7 @@ const MaterialRequisitionsPage = memo(() => {
           }
         }
       }
-    });
+    );
   };
 
   const handleSort = (field) => {
@@ -90,18 +105,18 @@ const MaterialRequisitionsPage = memo(() => {
     }
   };
 
-  // Obsługa zmiany statusu
+  // Handle status change
   const handleStatusChange = async (requisition, newStatus) => {
-    // Zapamiętaj poprzedni status
+    // Remember previous status
     const originalStatus = requisition.status;
 
-    // Natychmiastowa aktualizacja UI
-    updateSingleRequisition({
+    // Update UI immediately for better UX
+    const updatedRequisition = {
       ...requisition,
       status: newStatus
-    });
+    };
 
-    // Rozpocznij ładowanie dla tego wiersza
+    // Start loading for this row
     setStatusUpdating(prev => ({ ...prev, [requisition.id]: true }));
 
     try {
@@ -119,24 +134,24 @@ const MaterialRequisitionsPage = memo(() => {
         throw new Error(`Nie udało się zmienić statusu (${response.status})`);
       }
 
-      // Zakończono pomyślnie
+      // Success
       if (mountedRef.current) {
         showInfo(`Status zmieniono na "${getStatusText(newStatus)}"`);
+
+        // Force refresh after successful status change
+        setTimeout(() => {
+          forceRefresh();
+        }, 300);
       }
     } catch (err) {
       console.error('Błąd zmiany statusu:', err);
 
-      // Przywróć poprzedni status w przypadku błędu
-      updateSingleRequisition({
-        ...requisition,
-        status: originalStatus
-      });
-
+      // Restore previous status in case of error
       if (mountedRef.current) {
         showInfo("Błąd zmiany statusu. Spróbuj ponownie.", { type: 'warning' });
       }
     } finally {
-      // Zakończ ładowanie
+      // End loading
       if (mountedRef.current) {
         setStatusUpdating(prev => ({ ...prev, [requisition.id]: false }));
       }
@@ -171,23 +186,26 @@ const MaterialRequisitionsPage = memo(() => {
     return statusMap[status] || status;
   };
 
-  // Filtrowanie zapotrzebowań - Pokaż tylko zapotrzebowania typu material
+  // Filter requisitions - show only material type requisitions
   const filteredRequisitions = React.useMemo(() => {
-    // Utwórz kopię tablicy do sortowania, aby nie modyfikować oryginalnej
-    const sortableReqs = [...requisitions].filter(req => req.requisition_type === 'material');
+    // Create a copy of the array for sorting to avoid modifying the original
+    const materialReqs = requisitions.filter(req => req.requisition_type === 'material');
+    console.log(`Found ${materialReqs.length} material requisitions out of ${requisitions.length} total`);
 
-    // Sortowanie
+    const sortableReqs = [...materialReqs];
+
+    // Sorting
     sortableReqs.sort((a, b) => {
       let aValue = a[sortField];
       let bValue = b[sortField];
 
-      // Obsługa pól zagnieżdżonych
+      // Handle nested fields
       if (sortField === 'project_name') {
         aValue = a.project_name || '';
         bValue = b.project_name || '';
       }
 
-      // Obsługa dat
+      // Handle dates
       if (sortField === 'created_at' || sortField === 'deadline') {
         aValue = aValue ? new Date(aValue) : null;
         bValue = bValue ? new Date(bValue) : null;
@@ -197,14 +215,14 @@ const MaterialRequisitionsPage = memo(() => {
         if (!bValue) return -1;
       }
 
-      // Obsługa tekstów
+      // Handle text
       if (typeof aValue === 'string' && typeof bValue === 'string') {
         return sortDirection === 'asc'
           ? aValue.localeCompare(bValue)
           : bValue.localeCompare(aValue);
       }
 
-      // Obsługa innych typów
+      // Handle other types
       if (aValue === bValue) return 0;
       if (aValue === null || aValue === undefined) return 1;
       if (bValue === null || bValue === undefined) return -1;
@@ -214,19 +232,19 @@ const MaterialRequisitionsPage = memo(() => {
         : aValue < bValue ? 1 : -1;
     });
 
-    // Filtrowanie po statusie i wyszukiwanie
+    // Filter by status and search term
     return sortableReqs.filter(requisition => {
-      // Filtrowanie po statusie
+      // Filter by status
       if (statusFilter !== 'all' && requisition.status !== statusFilter) {
         return false;
       }
 
-      // Filtrowanie po wyszukiwanej frazie
+      // Filter by search term
       if (searchTerm) {
         const searchLower = searchTerm.toLowerCase();
         return (
-          requisition.number?.toLowerCase().includes(searchLower) ||
-          requisition.project_name?.toLowerCase().includes(searchLower) ||
+          (requisition.number && requisition.number.toLowerCase().includes(searchLower)) ||
+          (requisition.project_name && requisition.project_name.toLowerCase().includes(searchLower)) ||
           (requisition.comment && requisition.comment.toLowerCase().includes(searchLower))
         );
       }
@@ -235,7 +253,7 @@ const MaterialRequisitionsPage = memo(() => {
     });
   }, [requisitions, sortField, sortDirection, statusFilter, searchTerm]);
 
-  // Komponent tabeli zapotrzebowań - wyodrębniony, aby zminimalizować ponowne renderowanie
+  // Requisitions table component - separated to minimize re-renders
   const RequisitionsTable = memo(() => (
     <div className="overflow-x-auto">
       <table className="min-w-full divide-y divide-gray-200">
@@ -353,7 +371,7 @@ const MaterialRequisitionsPage = memo(() => {
     </div>
   ));
 
-  // Główny widok strony zapotrzebowań materiałowych
+  // Main view of material requisitions page
   const MainView = memo(() => (
     <div>
       <div className="flex justify-between items-center mb-8">
@@ -447,25 +465,38 @@ const MaterialRequisitionsPage = memo(() => {
           </div>
         </div>
 
-        {loading && filteredRequisitions.length === 0 ? (
+        {error && (
+          <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-6" role="alert">
+            <div className="flex items-center">
+              <AlertCircle className="mr-2" size={20} />
+              <p>{error}</p>
+            </div>
+          </div>
+        )}
+
+        {loading ? (
           <div className="flex justify-center p-8">
             <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-orange-500"></div>
           </div>
-        ) : error ? (
-          <div className="text-center text-red-500 p-4">
-            <AlertCircle className="mx-auto mb-2" size={24} />
-            {error}
-          </div>
         ) : filteredRequisitions.length === 0 ? (
           <div className="text-center text-gray-500 p-4">
-            Brak zapotrzebowań spełniających kryteria wyszukiwania
+            {requisitions.length === 0 ?
+              "Trwa ładowanie zapotrzebowań..." :
+              "Brak zapotrzebowań spełniających kryteria wyszukiwania"}
+
+            <button
+              onClick={() => forceRefresh()}
+              className="mt-4 px-3 py-1 bg-orange-500 text-white rounded hover:bg-orange-600"
+            >
+              Odśwież dane
+            </button>
           </div>
         ) : (
           <RequisitionsTable />
         )}
       </div>
 
-      {/* Wskaźnik ładowania tylko gdy faktycznie trwa ładowanie */}
+      {/* Loading indicator only when actually loading */}
       {loading && (
         <div className="fixed bottom-4 right-4 bg-white p-2 rounded-full shadow-lg z-10">
           <div className="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-orange-500"></div>
@@ -474,7 +505,7 @@ const MaterialRequisitionsPage = memo(() => {
     </div>
   ));
 
-  // Memoizowane wersje formularzy
+  // Memoized form versions
   const ViewForm = memo(props => <MaterialRequisitionForm mode="view" {...props} />);
   const EditForm = memo(props => <MaterialRequisitionForm mode="edit" {...props} />);
   const CreateForm = memo(props => <MaterialRequisitionForm mode="create" {...props} />);

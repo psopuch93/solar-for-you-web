@@ -49,12 +49,18 @@ export const RequisitionProvider = ({ children }) => {
         setLoading(true);
         setError(null);
 
+        // Make sure we're using a relative URL and make the fetch more robust
         const response = await fetch('/api/requisitions/', {
           credentials: 'same-origin',
+          headers: {
+            'Accept': 'application/json',
+            'Cache-Control': 'no-cache'
+          }
         });
 
         if (!response.ok) {
-          throw new Error('Błąd pobierania zapotrzebowań');
+          console.error(`Response status: ${response.status}`);
+          throw new Error(`Błąd pobierania zapotrzebowań: ${response.status}`);
         }
 
         const data = await response.json();
@@ -83,6 +89,8 @@ export const RequisitionProvider = ({ children }) => {
       } catch (err) {
         console.error('Błąd pobierania zapotrzebowań:', err);
         setError(err.message || 'Nie udało się pobrać zapotrzebowań');
+        // Reset the requisitions array to an empty array instead of keeping stale data
+        setRequisitions([]);
       } finally {
         setLoading(false);
       }
@@ -96,6 +104,19 @@ export const RequisitionProvider = ({ children }) => {
       fetchRequisitions();
     }
   }, [shouldRefresh, fetchRequisitions]);
+
+  // Effect to fetch data on initial mount
+  useEffect(() => {
+    console.log("RequisitionProvider: Initial data fetch");
+    fetchRequisitions(true); // Force refresh on initial mount
+
+    // Cleanup function to cancel any pending debounce
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+    };
+  }, [fetchRequisitions]);
 
   // Funkcja do wymuszenia odświeżenia listy zapotrzebowań
   const refreshRequisitions = useCallback(() => {
