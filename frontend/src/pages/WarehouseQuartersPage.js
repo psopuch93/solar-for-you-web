@@ -20,9 +20,6 @@ import QuarterForm from '../components/quarters/QuarterForm';
 import QuartersList from '../components/quarters/QuartersList';
 import { getCsrfToken } from '../utils/csrfToken';
 
-// Initialize with empty array - will fetch from API
-const initialQuarters = [];
-
 const WarehouseQuartersPage = () => {
   const navigate = useNavigate();
   const [quarters, setQuarters] = useState([]);
@@ -30,6 +27,11 @@ const WarehouseQuartersPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
+
+  // Funkcja obsługująca zmianę wartości pola wyszukiwania - wydzielona osobno
+  const handleSearchChange = (e) => {
+    setSearchTerm(e.target.value);
+  };
 
   // Fetch data from API
   useEffect(() => {
@@ -79,6 +81,7 @@ const WarehouseQuartersPage = () => {
 
   // Filter quarters based on search term
   const filteredQuarters = quarters.filter(quarter => {
+    if (!searchTerm) return true;
     return (
       quarter.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       quarter.address.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -362,6 +365,12 @@ const WarehouseQuartersPage = () => {
         </button>
       </div>
 
+      {error && (
+        <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-6">
+          <p>{error}</p>
+        </div>
+      )}
+
       <div className="mb-6">
         <div className="relative w-full max-w-md">
           <input
@@ -369,7 +378,7 @@ const WarehouseQuartersPage = () => {
             placeholder="Szukaj kwater..."
             className="pl-10 pr-4 py-2 w-full rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
             value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            onChange={handleSearchChange}
             autoComplete="off"
           />
           <Search className="absolute left-3 top-2.5 text-gray-400" size={18} />

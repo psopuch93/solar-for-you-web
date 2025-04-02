@@ -134,7 +134,7 @@ const QuarterCard = ({
         isOver ? 'ring-2 ring-indigo-500 shadow-lg transform scale-[1.02]' : ''
       }`}
     >
-      {/* Card Header */}
+      {/* Card Header - klikalny nagłówek */}
       <div
         className="bg-indigo-600 text-white p-4 rounded-t-xl cursor-pointer"
         onClick={() => onView(quarter.id)}
@@ -144,7 +144,7 @@ const QuarterCard = ({
           <div className="flex space-x-2">
             <button
               onClick={(e) => {
-                e.stopPropagation();
+                e.stopPropagation(); // Zatrzymaj propagację, aby nie wywoływać onView
                 onEdit(quarter.id);
               }}
               className="text-white hover:text-indigo-200 transition-colors"
@@ -153,7 +153,7 @@ const QuarterCard = ({
             </button>
             <button
               onClick={(e) => {
-                e.stopPropagation();
+                e.stopPropagation(); // Zatrzymaj propagację, aby nie wywoływać onView
                 onDelete(quarter.id);
               }}
               className="text-white hover:text-indigo-200 transition-colors"
@@ -164,8 +164,11 @@ const QuarterCard = ({
         </div>
       </div>
 
-      {/* Card Body */}
-      <div className="p-4">
+      {/* Card Body - również klikalny */}
+      <div
+        className="p-4 cursor-pointer"
+        onClick={() => onView(quarter.id)}
+      >
         {/* Location info */}
         <div className="mb-3 flex items-start">
           <MapPin className="text-gray-400 mr-2 mt-1 shrink-0" size={16} />
@@ -213,7 +216,10 @@ const QuarterCard = ({
                 <li key={occupant.id} className="bg-gray-50 rounded-lg p-2 flex justify-between items-center">
                   <span className="text-sm">{occupant.first_name} {occupant.last_name}</span>
                   <button
-                    onClick={() => onRemoveEmployee(quarter.id, occupant.id)}
+                    onClick={(e) => {
+                      e.stopPropagation(); // Zatrzymaj propagację, aby nie wywoływać onView
+                      onRemoveEmployee(quarter.id, occupant.id);
+                    }}
                     className="text-red-500 hover:text-red-700"
                   >
                     <Trash2 size={14} />
