@@ -1,6 +1,6 @@
 // frontend/src/components/quarters/QuartersList.js
 import React, { useState } from 'react';
-import { Edit, Trash2, Users, MapPin, Calendar, DollarSign, Home } from 'lucide-react';
+import { Edit, Trash2, Users, MapPin, Calendar, DollarSign, Home, Search } from 'lucide-react';
 import { useDrop } from 'react-dnd';
 import EmployeeItem from './EmployeeItem';
 
@@ -14,6 +14,7 @@ const QuartersList = ({
   onView
 }) => {
   const [showEmployees, setShowEmployees] = useState(false);
+  const [employeeSearchTerm, setEmployeeSearchTerm] = useState('');
 
   // Filter employees that are not assigned to any quarter
   const availableEmployees = employees.filter(employee =>
@@ -21,6 +22,15 @@ const QuartersList = ({
       quarter.occupants.some(occupant => occupant.id === employee.id)
     )
   );
+
+  // Filter based on search term
+  const filteredEmployees = availableEmployees.filter(employee => {
+    if (!employeeSearchTerm) return true;
+
+    const fullName = `${employee.first_name} ${employee.last_name}`.toLowerCase();
+    return fullName.includes(employeeSearchTerm.toLowerCase()) ||
+           (employee.pesel && employee.pesel.includes(employeeSearchTerm));
+  });
 
   return (
     <div className="space-y-6">
@@ -53,21 +63,42 @@ const QuartersList = ({
         </div>
 
         {showEmployees && (
-          <div className="border rounded-lg p-4 bg-gray-50">
-            {availableEmployees.length === 0 ? (
-              <p className="text-gray-500 text-center py-4">Wszyscy pracownicy są przydzieleni do kwater</p>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                {availableEmployees.map(employee => (
-                  <EmployeeItem
-                    key={employee.id}
-                    employee={employee}
-                    isDraggable={true}
-                  />
-                ))}
+          <>
+            {/* Dodajemy pole wyszukiwania pracowników */}
+            <div className="mb-4">
+              <div className="relative">
+                <input
+                  type="text"
+                  placeholder="Szukaj pracowników..."
+                  className="pl-10 pr-4 py-2 w-full rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  value={employeeSearchTerm}
+                  onChange={(e) => setEmployeeSearchTerm(e.target.value)}
+                  autoComplete="off"
+                />
+                <Search className="absolute left-3 top-2.5 text-gray-400" size={18} />
               </div>
-            )}
-          </div>
+            </div>
+
+            <div className="border rounded-lg p-4 bg-gray-50">
+              {filteredEmployees.length === 0 ? (
+                <p className="text-gray-500 text-center py-4">
+                  {availableEmployees.length === 0
+                    ? "Wszyscy pracownicy są przydzieleni do kwater"
+                    : "Nie znaleziono pracowników pasujących do kryteriów wyszukiwania"}
+                </p>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {filteredEmployees.map(employee => (
+                    <EmployeeItem
+                      key={employee.id}
+                      employee={employee}
+                      isDraggable={true}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          </>
         )}
       </div>
     </div>
