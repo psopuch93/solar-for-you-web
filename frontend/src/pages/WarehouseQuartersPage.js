@@ -18,20 +18,30 @@ import { HTML5Backend } from 'react-dnd-html5-backend';
 import QuarterDetail from '../components/quarters/QuarterDetail';
 import QuarterForm from '../components/quarters/QuarterForm';
 import QuartersList from '../components/quarters/QuartersList';
+import QuartersSearchInput from '../components/quarters/QuartersSearchInput';
+import QuarterDetailView from '../components/quarters/QuarterDetailView';
+import { QuartersSearchProvider, useQuartersSearch } from '../contexts/QuartersSearchContext';
 import { getCsrfToken } from '../utils/csrfToken';
 
+// Main component wrapped with context provider
 const WarehouseQuartersPage = () => {
+  return (
+    <QuartersSearchProvider>
+      <WarehouseQuartersContent />
+    </QuartersSearchProvider>
+  );
+};
+
+// Content component that uses the search context
+const WarehouseQuartersContent = () => {
   const navigate = useNavigate();
   const [quarters, setQuarters] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [searchTerm, setSearchTerm] = useState('');
 
-  // Funkcja obsługująca zmianę wartości pola wyszukiwania - wydzielona osobno
-  const handleSearchChange = (e) => {
-    setSearchTerm(e.target.value);
-  };
+  // Get the search term from context
+  const { searchTerm } = useQuartersSearch();
 
   // Fetch data from API
   useEffect(() => {
@@ -82,10 +92,32 @@ const WarehouseQuartersPage = () => {
   // Filter quarters based on search term
   const filteredQuarters = quarters.filter(quarter => {
     if (!searchTerm) return true;
+
+    const searchLower = searchTerm.toLowerCase();
+
+    // Szukaj we wszystkich istotnych polach kwatery
     return (
-      quarter.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      quarter.address.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      quarter.city.toLowerCase().includes(searchTerm.toLowerCase())
+      // Podstawowe informacje
+      (quarter.name && quarter.name.toLowerCase().includes(searchLower)) ||
+      (quarter.address && quarter.address.toLowerCase().includes(searchLower)) ||
+      (quarter.city && quarter.city.toLowerCase().includes(searchLower)) ||
+      (quarter.country && quarter.country.toLowerCase().includes(searchLower)) ||
+
+      // Wyszukiwanie po dniu płatności (jako string)
+      (quarter.paymentDay && quarter.paymentDay.toString().includes(searchLower)) ||
+      (quarter.payment_day && quarter.payment_day.toString().includes(searchLower)) ||
+
+      // Wyszukiwanie po maksymalnej liczbie osób (jako string)
+      (quarter.maxOccupants && quarter.maxOccupants.toString().includes(searchLower)) ||
+      (quarter.max_occupants && quarter.max_occupants.toString().includes(searchLower)) ||
+
+      // Wyszukiwanie po nazwiskach/imionach pracowników przypisanych do kwatery
+      (quarter.occupants && quarter.occupants.some(occupant =>
+        (occupant.first_name && occupant.first_name.toLowerCase().includes(searchLower)) ||
+        (occupant.last_name && occupant.last_name.toLowerCase().includes(searchLower)) ||
+        // Pełne imię i nazwisko
+        ((occupant.first_name + ' ' + occupant.last_name).toLowerCase().includes(searchLower))
+      ))
     );
   });
 
@@ -372,17 +404,7 @@ const WarehouseQuartersPage = () => {
       )}
 
       <div className="mb-6">
-        <div className="relative w-full max-w-md">
-          <input
-            type="text"
-            placeholder="Szukaj kwater..."
-            className="pl-10 pr-4 py-2 w-full rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            value={searchTerm}
-            onChange={handleSearchChange}
-            autoComplete="off"
-          />
-          <Search className="absolute left-3 top-2.5 text-gray-400" size={18} />
-        </div>
+        <QuartersSearchInput />
       </div>
 
       {loading ? (
@@ -413,12 +435,7 @@ const WarehouseQuartersPage = () => {
     <Routes>
       <Route path="/" element={<QuartersListPage />} />
       <Route path="/new" element={<QuarterForm onSave={handleAddQuarter} />} />
-      <Route path="/:id" element={<QuarterDetail
-        quarters={quarters}
-        employees={employees}
-        onAssignEmployee={handleAssignEmployee}
-        onRemoveEmployee={handleRemoveEmployee}
-      />} />
+      <Route path="/:id" element={<QuarterDetailView />} />
       <Route path="/:id/edit" element={<QuarterForm
         quarters={quarters}
         onSave={handleUpdateQuarter}

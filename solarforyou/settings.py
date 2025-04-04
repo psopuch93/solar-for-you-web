@@ -138,3 +138,6 @@ DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', EMAIL_HOST_USER)
 
 # Adres e-mail odbiorcy powiadomień o zapotrzebowaniach
 REQUISITION_NOTIFICATION_EMAIL = os.getenv('REQUISITION_NOTIFICATION_EMAIL', '')
+
+MEDIA_URL = '/media/'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')

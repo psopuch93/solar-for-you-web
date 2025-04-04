@@ -342,3 +342,19 @@ class RequisitionItem(models.Model):
                 name='positive_price_constraint'
             )
         ]
+
+class QuarterImage(models.Model):
+    """Model dla zdjęć kwater pracowniczych"""
+    quarter = models.ForeignKey(Quarter, on_delete=models.CASCADE, related_name='images', verbose_name="Kwatera")
+    image = models.ImageField(upload_to='quarter_images/', verbose_name="Zdjęcie")
+    name = models.CharField(max_length=255, blank=True, null=True, verbose_name="Nazwa zdjęcia")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Data utworzenia")
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='created_quarter_images', verbose_name="Utworzony przez")
+
+    class Meta:
+        verbose_name = "Zdjęcie kwatery"
+        verbose_name_plural = "Zdjęcia kwater"
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"Zdjęcie kwatery {self.quarter.name} ({self.id})"

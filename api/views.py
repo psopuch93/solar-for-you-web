@@ -1,4 +1,4 @@
-from rest_framework import viewsets, permissions, status
+from rest_framework import viewsets, permissions, status, parsers
 from rest_framework.decorators import action, api_view, permission_classes
 from django.http import JsonResponse
 from django.views.decorators.csrf import ensure_csrf_cookie
@@ -12,11 +12,11 @@ from django.db.models import Q
 from django.utils.decorators import method_decorator
 import datetime
 import json
-from .models import UserProfile, Project, Client, ProjectTag, Employee, Empl_tag, Requisition, Item, RequisitionItem, Quarter
+from .models import UserProfile, Project, Client, ProjectTag, Employee, Empl_tag, Requisition, Item, RequisitionItem, Quarter, QuarterImage
 from .serializers import (
     UserSerializer, UserProfileSerializer, ProjectSerializer,
     ClientSerializer, ProjectTagSerializer, EmployeeSerializer, EmplTagSerializer,
-    ItemSerializer, RequisitionSerializer, RequisitionItemSerializer, QuarterSerializer
+    ItemSerializer, RequisitionSerializer, RequisitionItemSerializer, QuarterSerializer, QuarterImageSerializer
 )
 
 class IsAdminOrOwner(permissions.BasePermission):
@@ -770,3 +770,30 @@ def remove_employee_from_quarter(request):
             'success': False,
             'message': 'Employee not found'
         }, status=status.HTTP_404_NOT_FOUND)
+
+@method_decorator(ensure_csrf_cookie, name='dispatch')
+class QuarterImageViewSet(viewsets.ModelViewSet):
+    """API endpoint dla zdjęć kwater"""
+    queryset = QuarterImage.objects.all()
+    serializer_class = QuarterImageSerializer
+    permission_classes = [permissions.IsAuthenticated, HasModulePrivilege]
+    required_privilege = 'manage_quarters'  # To samo uprawnienie co dla kwater
+    parser_classes = [parsers.MultiPartParser, parsers.FormParser]
+
+    def get_queryset(self):
+        """Filtruje zdjęcia po kwaterze, jeśli podano parametr quarter_id"""
+        queryset = super().get_queryset()
+        quarter_id = self.request.query_params.get('quarter_id')
+        if quarter_id:
+            queryset = queryset.filter(quarter_id=quarter_id)
+        return queryset
+
+    def perform_create(self, serializer):
+        """Dodaje bieżącego użytkownika jako created_by"""
+        serializer.save(created_by=self.request.user)
+
+    def get_serializer_context(self):
+        """Dodaje request do kontekstu serializera, aby móc generować pełne URL-e"""
+        context = super().get_serializer_context()
+        context['request'] = self.request
+        return context

@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
-from .models import UserProfile, Project, Client, ProjectTag, Empl_tag, Employee, Requisition, RequisitionItem, Item, Quarter
+from .models import UserProfile, Project, Client, ProjectTag, Empl_tag, Employee, Requisition, RequisitionItem, Item, Quarter, QuarterImage
 
 class UserSerializer(serializers.ModelSerializer):
     """Serializer dla modelu User"""
@@ -325,3 +325,28 @@ class QuarterSerializer(serializers.ModelSerializer):
 
     def get_occupants_count(self, obj):
         return obj.employees.count()
+
+class QuarterImageSerializer(serializers.ModelSerializer):
+    """Serializer dla zdjęć kwater"""
+    image_url = serializers.SerializerMethodField()
+    created_by_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = QuarterImage
+        fields = ('id', 'quarter', 'image', 'image_url', 'name', 'created_at', 'created_by', 'created_by_name')
+        read_only_fields = ('id', 'created_at', 'created_by')
+
+    def get_image_url(self, obj):
+        """Zwraca pełny URL do zdjęcia"""
+        if obj.image:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.image.url)
+            return obj.image.url
+        return None
+
+    def get_created_by_name(self, obj):
+        """Zwraca nazwę użytkownika, który dodał zdjęcie"""
+        if obj.created_by:
+            return f"{obj.created_by.first_name} {obj.created_by.last_name}".strip() or obj.created_by.username
+        return None

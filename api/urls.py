@@ -1,15 +1,17 @@
-# Dodanie endpointu CSRF do api/urls.py
+# Pełna zawartość api/urls.py
 
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.http import JsonResponse
+from django.conf import settings
+from django.conf.urls.static import static
 from .views import (
     UserViewSet, UserProfileViewSet, ProjectViewSet, ClientViewSet,
     ProjectTagViewSet, EmplTagViewSet, EmployeeViewSet, check_project_name,
     check_pesel, ItemViewSet, RequisitionViewSet, RequisitionItemViewSet,
     validate_requisition, export_requisitions, assign_employee_to_quarter,
-    remove_employee_from_quarter, QuarterViewSet
+    remove_employee_from_quarter, QuarterViewSet, QuarterImageViewSet
 )
 
 # Dodaj nową funkcję obsługującą CSRF
@@ -34,6 +36,7 @@ router.register(r'items', ItemViewSet)
 router.register(r'requisitions', RequisitionViewSet)
 router.register(r'requisition-items', RequisitionItemViewSet)
 router.register(r'quarters', QuarterViewSet)
+router.register(r'quarter-images', QuarterImageViewSet)
 
 urlpatterns = [
     # Dołącz ścieżki routera
@@ -49,3 +52,7 @@ urlpatterns = [
     path('assign-employee-to-quarter/', assign_employee_to_quarter, name='assign_employee_to_quarter'),
     path('remove-employee-from-quarter/', remove_employee_from_quarter, name='remove_employee_from_quarter'),
 ]
+
+# Dodaj obsługę plików mediów w trybie deweloperskim
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
