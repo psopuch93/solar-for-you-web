@@ -316,6 +316,27 @@ const BrigadePage = () => {
         throw new Error('Nie udało się usunąć pracownika z brygady');
       }
 
+      // Wyczyść przypisanie projektu dla pracownika
+      try {
+        const projectClearResponse = await fetch(`/api/employees/${memberId}/`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken(),
+          },
+          body: JSON.stringify({
+            current_project: null
+          }),
+          credentials: 'same-origin',
+        });
+
+        if (!projectClearResponse.ok) {
+          console.warn('Nie udało się wyczyścić projektu pracownika po usunięciu z brygady');
+        }
+      } catch (clearError) {
+        console.error('Error clearing employee project:', clearError);
+      }
+
       // Zaktualizuj stan
       const removedEmployee = availableEmployees.find(e => e.id === memberId) ||
                              brigadeMembers.find(m => m.employee === memberId)?.employee_data;

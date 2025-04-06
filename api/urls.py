@@ -12,7 +12,8 @@ from .views import (
     check_pesel, ItemViewSet, RequisitionViewSet, RequisitionItemViewSet,
     validate_requisition, export_requisitions, assign_employee_to_quarter,
     remove_employee_from_quarter, QuarterViewSet, QuarterImageViewSet,
-    UserSettingsViewSet, BrigadeMemberViewSet, my_user_settings, available_employees
+    UserSettingsViewSet, BrigadeMemberViewSet, my_user_settings, available_employees,
+    update_employee_project
 )
 
 # Dodaj nową funkcję obsługującą CSRF
@@ -56,6 +57,7 @@ urlpatterns = [
     path('remove-employee-from-quarter/', remove_employee_from_quarter, name='remove_employee_from_quarter'),
     path('user-settings/me/', my_user_settings, name='my_user_settings'),
     path('available-employees/', available_employees, name='available_employees'),
+    path('update-employee-project/', update_employee_project, name='update_employee_project'),
 
 ]
 

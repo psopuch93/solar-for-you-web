@@ -926,3 +926,51 @@ def available_employees(request):
         return Response(serializer.data)
     except Exception as e:
         return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+def update_employee_project(request):
+    """Update an employee's project assignment"""
+    employee_id = request.data.get('employee_id')
+    project_id = request.data.get('project_id')  # Can be None to clear the project
+
+    if not employee_id:
+        return Response({
+            'success': False,
+            'message': 'Employee ID is required'
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        employee = Employee.objects.get(id=employee_id)
+
+        # Update the employee's project
+        if project_id:
+            try:
+                project = Project.objects.get(id=project_id)
+                employee.current_project = project
+            except Project.DoesNotExist:
+                return Response({
+                    'success': False,
+                    'message': 'Project not found'
+                }, status=status.HTTP_404_NOT_FOUND)
+        else:
+            # Clear the project assignment
+            employee.current_project = None
+
+        employee.save()
+
+        return Response({
+            'success': True,
+            'message': f"Employee {employee.first_name} {employee.last_name}'s project updated successfully"
+        })
+
+    except Employee.DoesNotExist:
+        return Response({
+            'success': False,
+            'message': 'Employee not found'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        return Response({
+            'success': False,
+            'message': f'Error updating employee project: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
