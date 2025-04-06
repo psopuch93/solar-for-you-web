@@ -83,98 +83,119 @@ const BrigadePage = () => {
 
   // Fetch all required data
   const fetchData = async () => {
-    setLoading(true);
-    try {
-      // Pobierz listę wszystkich projektów
-      const projectsResponse = await fetch('/api/projects/', {
-        credentials: 'same-origin',
-      });
+      setLoading(true);
+      try {
+        // Pobierz listę wszystkich projektów
+        const projectsResponse = await fetch('/api/projects/', {
+          credentials: 'same-origin',
+        });
 
-      if (!projectsResponse.ok) {
-        throw new Error('Nie udało się pobrać listy projektów');
-      }
-
-      const projectsData = await projectsResponse.json();
-      setProjects(projectsData);
-
-      // Pobierz ustawienia użytkownika
-      const userSettingsResponse = await fetch('/api/user-settings/me/', {
-        credentials: 'same-origin',
-      });
-
-      if (!userSettingsResponse.ok) {
-        if (userSettingsResponse.status === 404) {
-          // Ustawienia użytkownika nie istnieją, trzeba je utworzyć
-          await createUserSettings();
-        } else {
-          throw new Error('Nie udało się pobrać ustawień użytkownika');
+        if (!projectsResponse.ok) {
+          throw new Error('Nie udało się pobrać listy projektów');
         }
-      } else {
-        const userSettingsData = await userSettingsResponse.json();
+
+        const projectsData = await projectsResponse.json();
+        setProjects(projectsData);
+
+        // Pobierz ustawienia użytkownika
+        const userSettingsResponse = await fetch('/api/user-settings/me/', {
+          credentials: 'same-origin',
+        });
+
+        if (!userSettingsResponse.ok) {
+          if (userSettingsResponse.status === 404) {
+            // Ustawienia użytkownika nie istnieją, trzeba je utworzyć
+            await createUserSettings();
+          } else {
+            throw new Error('Nie udało się pobrać ustawień użytkownika');
+          }
+        } else {
+          const userSettingsData = await userSettingsResponse.json();
+            console.log("Dane z API user-settings/me/:", userSettingsData);
+
+            setUserSettings(userSettingsData);
+
+            // Ustal faktyczny obiekt projektu lub NULL
+            const projectData = userSettingsData.project ? userSettingsData.project : null;
+            console.log("Dane projektu:", projectData);
+
+            setUserProject(projectData);
+            setSelectedProjectId(projectData ? projectData.id : '');
+        }
+
+        // Pobierz członków brygady
+        const brigadeResponse = await fetch('/api/brigade-members/', {
+          credentials: 'same-origin',
+        });
+
+        if (!brigadeResponse.ok) {
+          throw new Error('Nie udało się pobrać członków brygady');
+        }
+
+        const brigadeData = await brigadeResponse.json();
+        setBrigadeMembers(brigadeData);
+
+        // Pobierz dostępnych pracowników
+        const employeesResponse = await fetch('/api/available-employees/', {
+          credentials: 'same-origin',
+        });
+
+        if (!employeesResponse.ok) {
+          throw new Error('Nie udało się pobrać dostępnych pracowników');
+        }
+
+        const employeesData = await employeesResponse.json();
+        setAvailableEmployees(employeesData);
+
+        setError(null);
+      } catch (err) {
+        console.error('Error fetching data:', err);
+        setError(err.message || 'Wystąpił błąd podczas ładowania danych');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    // Utworzenie ustawień użytkownika, jeśli nie istnieją
+    const createUserSettings = async () => {
+      try {
+        console.log("Próba utworzenia ustawień użytkownika...");
+
+        const response = await fetch('/api/user-settings/', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken(),
+          },
+          body: JSON.stringify({}),
+          credentials: 'same-origin',
+        });
+
+        // Debugowanie - sprawdzenie co zawiera odpowiedź
+        const responseText = await response.text();
+        console.log("Odpowiedź serwera:", responseText);
+
+        if (!response.ok) {
+          throw new Error(`Błąd serwera: ${response.status} - ${responseText}`);
+        }
+
+        // Próbuj sparsować JSON tylko jeśli odpowiedź jest poprawna
+        let userSettingsData;
+        try {
+          userSettingsData = JSON.parse(responseText);
+        } catch (jsonError) {
+          console.error("Błąd parsowania JSON:", jsonError);
+          throw new Error("Otrzymano nieprawidłową odpowiedź JSON od serwera");
+        }
+
         setUserSettings(userSettingsData);
         setUserProject(userSettingsData.project);
         setSelectedProjectId(userSettingsData.project ? userSettingsData.project.id : '');
+      } catch (err) {
+        console.error('Error creating user settings:', err);
+        setError(`Nie udało się utworzyć ustawień użytkownika: ${err.message}`);
       }
-
-      // Pobierz członków brygady
-      const brigadeResponse = await fetch('/api/brigade-members/', {
-        credentials: 'same-origin',
-      });
-
-      if (!brigadeResponse.ok) {
-        throw new Error('Nie udało się pobrać członków brygady');
-      }
-
-      const brigadeData = await brigadeResponse.json();
-      setBrigadeMembers(brigadeData);
-
-      // Pobierz dostępnych pracowników
-      const employeesResponse = await fetch('/api/available-employees/', {
-        credentials: 'same-origin',
-      });
-
-      if (!employeesResponse.ok) {
-        throw new Error('Nie udało się pobrać dostępnych pracowników');
-      }
-
-      const employeesData = await employeesResponse.json();
-      setAvailableEmployees(employeesData);
-
-      setError(null);
-    } catch (err) {
-      console.error('Error fetching data:', err);
-      setError(err.message || 'Wystąpił błąd podczas ładowania danych');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Utworzenie ustawień użytkownika, jeśli nie istnieją
-  const createUserSettings = async () => {
-    try {
-      const response = await fetch('/api/user-settings/', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-CSRFToken': getCsrfToken(),
-        },
-        body: JSON.stringify({}),
-        credentials: 'same-origin',
-      });
-
-      if (!response.ok) {
-        throw new Error('Nie udało się utworzyć ustawień użytkownika');
-      }
-
-      const userSettingsData = await response.json();
-      setUserSettings(userSettingsData);
-      setUserProject(userSettingsData.project);
-      setSelectedProjectId(userSettingsData.project ? userSettingsData.project.id : '');
-    } catch (err) {
-      console.error('Error creating user settings:', err);
-      setError('Nie udało się utworzyć ustawień użytkownika');
-    }
-  };
+    };
 
   // Aktualizacja projektu użytkownika
   const updateUserProject = async () => {

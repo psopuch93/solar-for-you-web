@@ -905,9 +905,23 @@ def my_user_settings(request):
             user=request.user,
             defaults={'project': None}
         )
-        serializer = UserSettingsSerializer(settings)
-        return Response(serializer.data)
+
+        # Użyj kontekstu, aby upewnić się, że projekt jest poprawnie serializowany
+        serializer = UserSettingsSerializer(settings, context={'request': request})
+
+        # Dodaj debug info
+        result = serializer.data
+
+        # Pokaż dodatkowe informacje w logach
+        print(f"User settings for {request.user.username}: {result}")
+        if settings.project:
+            print(f"Project assigned: {settings.project.name} (ID: {settings.project.id})")
+        else:
+            print("No project assigned")
+
+        return Response(result)
     except Exception as e:
+        print(f"Error in my_user_settings: {str(e)}")
         return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 # Widok do pobierania dostępnych pracowników (nie przypisanych do brygad)
@@ -974,3 +988,19 @@ def update_employee_project(request):
             'success': False,
             'message': f'Error updating employee project: {str(e)}'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+def create_user_settings(request):
+    """Create user settings if they don't exist"""
+    try:
+        # Check if settings already exist
+        user_settings, created = UserSettings.objects.get_or_create(
+            user=request.user,
+            defaults={'project': None}
+        )
+
+        serializer = UserSettingsSerializer(user_settings)
+        return Response(serializer.data)
+    except Exception as e:
+        return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)

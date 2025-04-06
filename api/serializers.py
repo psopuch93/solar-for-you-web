@@ -354,12 +354,25 @@ class QuarterImageSerializer(serializers.ModelSerializer):
 class UserSettingsSerializer(serializers.ModelSerializer):
     """Serializer dla modelu UserSettings"""
     username = serializers.CharField(source='user.username', read_only=True)
-    project_name = serializers.CharField(source='project.name', read_only=True)
+    project_name = serializers.SerializerMethodField()
+    project_details = serializers.SerializerMethodField()
 
     class Meta:
         model = UserSettings
-        fields = ('id', 'user', 'username', 'project', 'project_name', 'created_at', 'updated_at')
+        fields = ('id', 'user', 'username', 'project', 'project_name', 'project_details', 'created_at', 'updated_at')
         read_only_fields = ('id', 'user', 'username', 'created_at', 'updated_at')
+
+    def get_project_name(self, obj):
+        return obj.project.name if obj.project else None
+
+    def get_project_details(self, obj):
+        if not obj.project:
+            return None
+        return {
+            'id': obj.project.id,
+            'name': obj.project.name,
+            'status': obj.project.status
+        }
 
 class BrigadeMemberSerializer(serializers.ModelSerializer):
     """Serializer dla modelu BrigadeMember"""
