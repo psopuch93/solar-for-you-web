@@ -358,3 +358,59 @@ class QuarterImage(models.Model):
 
     def __str__(self):
         return f"Zdjęcie kwatery {self.quarter.name} ({self.id})"
+
+class UserSettings(models.Model):
+    """Model przechowujący ustawienia użytkownika, w tym przypisanie do projektu"""
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='user_settings')
+    project = models.ForeignKey(Project, on_delete=models.SET_NULL, null=True, blank=True, related_name='assigned_users')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Data utworzenia")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Data aktualizacji")
+
+    def __str__(self):
+        return f"Ustawienia dla {self.user.username}"
+
+    class Meta:
+        verbose_name = "Ustawienia użytkownika"
+        verbose_name_plural = "Ustawienia użytkowników"
+
+class BrigadeMember(models.Model):
+    """Model reprezentujący członka brygady"""
+    brigade_leader = models.ForeignKey(User, on_delete=models.CASCADE, related_name='brigade_members')
+    employee = models.ForeignKey(Employee, on_delete=models.CASCADE, related_name='brigade_assignments')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Data utworzenia")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Data aktualizacji")
+
+    def __str__(self):
+        return f"{self.employee} w brygadzie {self.brigade_leader.username}"
+
+    def save(self, *args, **kwargs):
+        # Jeśli lider brygady ma przypisany projekt, przypisz go również pracownikowi
+        try:
+            leader_settings = UserSettings.objects.get(user=self.brigade_leader)
+            if leader_settings.project:
+                self.employee.current_project = leader_settings.project
+                self.employee.save()
+        except UserSettings.DoesNotExist:
+            pass
+
+        super().save(*args, **kwargs)
+
+    class Meta:
+        verbose_name = "Członek brygady"
+        verbose_name_plural = "Członkowie brygady"
+        unique_together = ('brigade_leader', 'employee')
+
+# Sygnał do aktualizacji członków brygady po zmianie projektu
+from django.db.models.signals import post_save
+from django.dispatch import receiver
+
+@receiver(post_save, sender=UserSettings)
+def update_brigade_members_project(sender, instance, **kwargs):
+    """Aktualizuje projekt dla wszystkich członków brygady po zmianie projektu lidera"""
+    if instance.project:
+        # Pobierz wszystkich członków brygady
+        brigade_members = BrigadeMember.objects.filter(brigade_leader=instance.user)
+        for member in brigade_members:
+            if member.employee.current_project != instance.project:
+                member.employee.current_project = instance.project
+                member.employee.save()

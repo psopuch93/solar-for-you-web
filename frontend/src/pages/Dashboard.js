@@ -27,6 +27,8 @@ import { ClientProvider } from '../contexts/ClientContext';
 import { EmployeeProvider } from '../contexts/EmployeeContext';
 import { RequisitionProvider } from '../contexts/RequisitionContext';
 import { getCsrfToken } from '../utils/csrfToken';
+import BrigadePage from './BrigadePage';
+
 
 // Komponenty pomocnicze
 const SidebarItem = memo(({ icon: Icon, label, isExpanded, to }) => (
@@ -71,17 +73,18 @@ const BusinessDashboard = memo(({ setIsAuthenticated }) => {
   };
 
   const sidebarItems = [
-    { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
-    { icon: Folder, label: 'Projekty', path: '/dashboard/projects' },
-    { icon: Users, label: 'Klienci', path: '/dashboard/clients' },
-    { icon: Users, label: 'Pracownicy', path: '/dashboard/employees' },
-    { icon: FileText, label: 'Progres Raport', path: '/dashboard/reports' },
-    { icon: Clipboard, label: 'Raporty', path: '/dashboard/analytics' },
-    { icon: Truck, label: 'Zapotrzebowania', path: '/dashboard/requests' },
-    { icon: Warehouse, label: 'Magazyn', path: '/dashboard/warehouse' },
-    { icon: Wrench, label: 'Brygada Narzędzia', path: '/dashboard/tools' },
-    { icon: HelpCircle, label: 'Zgłoszenia', path: '/dashboard/tickets' }
-  ];
+      { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
+      { icon: Folder, label: 'Projekty', path: '/dashboard/projects' },
+      { icon: Users, label: 'Klienci', path: '/dashboard/clients' },
+      { icon: Users, label: 'Pracownicy', path: '/dashboard/employees' },
+      { icon: FileText, label: 'Progres Raport', path: '/dashboard/reports' },
+      { icon: Clipboard, label: 'Raporty', path: '/dashboard/analytics' },
+      { icon: Truck, label: 'Zapotrzebowania', path: '/dashboard/requests' },
+      { icon: Warehouse, label: 'Magazyn', path: '/dashboard/warehouse' },
+      { icon: Users, label: 'Brygada', path: '/dashboard/brigade' }, // Nowa sekcja
+      { icon: Wrench, label: 'Narzędzia', path: '/dashboard/tools' }, // Nowa sekcja
+      { icon: HelpCircle, label: 'Zgłoszenia', path: '/dashboard/tickets' }
+    ];
 
   return (
     <ProjectProvider>
@@ -139,6 +142,7 @@ const BusinessDashboard = memo(({ setIsAuthenticated }) => {
                     <Route path="/employees/*" element={<EmployeesPage />} />
                     <Route path="/requests/*" element={<RequisitionsPage />} />
                     <Route path="/warehouse/*" element={<WarehousePage />} />
+                    <Route path="/brigade" element={<BrigadePage />} />
                     {/* Pozostałe trasy można dodać w przyszłości */}
                     <Route path="*" element={<div>Strona nie została znaleziona</div>} />
                   </Routes>

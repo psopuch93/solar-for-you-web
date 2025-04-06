@@ -11,7 +11,8 @@ from .views import (
     ProjectTagViewSet, EmplTagViewSet, EmployeeViewSet, check_project_name,
     check_pesel, ItemViewSet, RequisitionViewSet, RequisitionItemViewSet,
     validate_requisition, export_requisitions, assign_employee_to_quarter,
-    remove_employee_from_quarter, QuarterViewSet, QuarterImageViewSet
+    remove_employee_from_quarter, QuarterViewSet, QuarterImageViewSet,
+    UserSettingsViewSet, BrigadeMemberViewSet, my_user_settings, available_employees
 )
 
 # Dodaj nową funkcję obsługującą CSRF
@@ -37,6 +38,8 @@ router.register(r'requisitions', RequisitionViewSet)
 router.register(r'requisition-items', RequisitionItemViewSet)
 router.register(r'quarters', QuarterViewSet)
 router.register(r'quarter-images', QuarterImageViewSet)
+router.register(r'user-settings', UserSettingsViewSet)
+router.register(r'brigade-members', BrigadeMemberViewSet)
 
 urlpatterns = [
     # Dołącz ścieżki routera
@@ -51,6 +54,9 @@ urlpatterns = [
     path('csrf/', get_csrf_token, name='get_csrf_token'),
     path('assign-employee-to-quarter/', assign_employee_to_quarter, name='assign_employee_to_quarter'),
     path('remove-employee-from-quarter/', remove_employee_from_quarter, name='remove_employee_from_quarter'),
+    path('user-settings/me/', my_user_settings, name='my_user_settings'),
+    path('available-employees/', available_employees, name='available_employees'),
+
 ]
 
 # Dodaj obsługę plików mediów w trybie deweloperskim

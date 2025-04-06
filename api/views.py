@@ -12,11 +12,12 @@ from django.db.models import Q
 from django.utils.decorators import method_decorator
 import datetime
 import json
-from .models import UserProfile, Project, Client, ProjectTag, Employee, Empl_tag, Requisition, Item, RequisitionItem, Quarter, QuarterImage
+from .models import UserProfile, Project, Client, ProjectTag, Employee, Empl_tag, Requisition, Item, RequisitionItem, Quarter, QuarterImage, UserSettings, BrigadeMember
 from .serializers import (
     UserSerializer, UserProfileSerializer, ProjectSerializer,
     ClientSerializer, ProjectTagSerializer, EmployeeSerializer, EmplTagSerializer,
-    ItemSerializer, RequisitionSerializer, RequisitionItemSerializer, QuarterSerializer, QuarterImageSerializer
+    ItemSerializer, RequisitionSerializer, RequisitionItemSerializer, QuarterSerializer, QuarterImageSerializer,
+    UserSettingsSerializer, BrigadeMemberSerializer
 )
 
 class IsAdminOrOwner(permissions.BasePermission):
@@ -797,3 +798,131 @@ class QuarterImageViewSet(viewsets.ModelViewSet):
         context = super().get_serializer_context()
         context['request'] = self.request
         return context
+
+class UserSettingsViewSet(viewsets.ModelViewSet):
+    """API endpoint dla ustawień użytkownika"""
+    queryset = UserSettings.objects.all()
+    serializer_class = UserSettingsSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        """Filtrowanie ustawień użytkownika"""
+        user = self.request.user
+
+        # Admin widzi wszystkie ustawienia
+        if user.is_staff:
+            return UserSettings.objects.all()
+
+        # Zwykły użytkownik widzi tylko swoje ustawienia
+        return UserSettings.objects.filter(user=user)
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
+
+    def update(self, request, *args, **kwargs):
+        """Rozszerzona metoda aktualizacji, która waliduje przypisania projektu"""
+        partial = kwargs.pop('partial', False)
+        instance = self.get_object()
+
+        # Upewnij się, że to są ustawienia zalogowanego użytkownika
+        if instance.user != request.user and not request.user.is_staff:
+            return Response(
+                {'detail': 'Nie masz uprawnień do edycji ustawień innych użytkowników.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # Jeśli aktualizujemy projekt
+        if 'project' in request.data:
+            project_id = request.data.get('project')
+
+            # Jeśli project_id jest pusty lub null, ustawiamy na None
+            if not project_id:
+                request.data['project'] = None
+            else:
+                # Sprawdź, czy projekt istnieje
+                try:
+                    project = Project.objects.get(id=project_id)
+                except Project.DoesNotExist:
+                    return Response(
+                        {'detail': f'Projekt o ID {project_id} nie istnieje.'},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+
+        # Aktualizuj pracowników w brygadzie, aby mieli ten sam projekt
+        new_project = serializer.instance.project
+        if new_project:
+            # Pobierz wszystkich pracowników z brygady
+            brigade_members = BrigadeMember.objects.filter(brigade_leader=request.user)
+            for member in brigade_members:
+                member.employee.current_project = new_project
+                member.employee.save()
+
+        return Response(serializer.data)
+
+class BrigadeMemberViewSet(viewsets.ModelViewSet):
+    """API endpoint dla członków brygady"""
+    queryset = BrigadeMember.objects.all()
+    serializer_class = BrigadeMemberSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        """Filtrowanie członków brygady"""
+        user = self.request.user
+
+        # Admin widzi wszystkich członków brygad
+        if user.is_staff:
+            return BrigadeMember.objects.all()
+
+        # Zwykły użytkownik widzi tylko członków swojej brygady
+        return BrigadeMember.objects.filter(brigade_leader=user)
+
+    def perform_create(self, serializer):
+        """Dodaje aktualnego użytkownika jako szefa brygady przy tworzeniu nowego członka"""
+        serializer.save(brigade_leader=self.request.user)
+
+    def create(self, request, *args, **kwargs):
+        """Rozszerzenie metody create, aby sprawdzać dostępność pracownika"""
+        # Sprawdź, czy pracownik jest już przypisany do innej brygady
+        employee_id = request.data.get('employee')
+        if BrigadeMember.objects.filter(employee_id=employee_id).exists():
+            return Response(
+                {'detail': 'Ten pracownik jest już przypisany do innej brygady.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        return super().create(request, *args, **kwargs)
+
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def my_user_settings(request):
+    """Endpoint zwracający ustawienia zalogowanego użytkownika"""
+    try:
+        settings, created = UserSettings.objects.get_or_create(
+            user=request.user,
+            defaults={'project': None}
+        )
+        serializer = UserSettingsSerializer(settings)
+        return Response(serializer.data)
+    except Exception as e:
+        return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+# Widok do pobierania dostępnych pracowników (nie przypisanych do brygad)
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def available_employees(request):
+    """Endpoint zwracający pracowników, którzy nie są przypisani do żadnej brygady"""
+    try:
+        # Pobranie ID wszystkich pracowników już przypisanych do brygad
+        assigned_employees = BrigadeMember.objects.values_list('employee_id', flat=True)
+
+        # Pobranie wszystkich dostępnych pracowników
+        employees = Employee.objects.exclude(id__in=assigned_employees)
+
+        serializer = EmployeeSerializer(employees, many=True)
+        return Response(serializer.data)
+    except Exception as e:
+        return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)

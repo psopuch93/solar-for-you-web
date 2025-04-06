@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
-from .models import UserProfile, Project, Client, ProjectTag, Empl_tag, Employee, Requisition, RequisitionItem, Item, Quarter, QuarterImage
+from .models import UserProfile, Project, Client, ProjectTag, Empl_tag, Employee, Requisition, RequisitionItem, Item, Quarter, QuarterImage, UserSettings, BrigadeMember
 
 class UserSerializer(serializers.ModelSerializer):
     """Serializer dla modelu User"""
@@ -350,3 +350,36 @@ class QuarterImageSerializer(serializers.ModelSerializer):
         if obj.created_by:
             return f"{obj.created_by.first_name} {obj.created_by.last_name}".strip() or obj.created_by.username
         return None
+
+class UserSettingsSerializer(serializers.ModelSerializer):
+    """Serializer dla modelu UserSettings"""
+    username = serializers.CharField(source='user.username', read_only=True)
+    project_name = serializers.CharField(source='project.name', read_only=True)
+
+    class Meta:
+        model = UserSettings
+        fields = ('id', 'user', 'username', 'project', 'project_name', 'created_at', 'updated_at')
+        read_only_fields = ('id', 'user', 'username', 'created_at', 'updated_at')
+
+class BrigadeMemberSerializer(serializers.ModelSerializer):
+    """Serializer dla modelu BrigadeMember"""
+    employee_name = serializers.SerializerMethodField()
+    brigade_leader_name = serializers.CharField(source='brigade_leader.username', read_only=True)
+    employee_data = serializers.SerializerMethodField()
+
+    class Meta:
+        model = BrigadeMember
+        fields = ('id', 'brigade_leader', 'brigade_leader_name', 'employee', 'employee_name', 'employee_data', 'created_at', 'updated_at')
+        read_only_fields = ('id', 'created_at', 'updated_at', 'brigade_leader', 'brigade_leader_name', 'employee_data')
+
+    def get_employee_name(self, obj):
+        return f"{obj.employee.first_name} {obj.employee.last_name}"
+
+    def get_employee_data(self, obj):
+        """Zwraca szczegółowe dane pracownika"""
+        return {
+            "id": obj.employee.id,
+            "first_name": obj.employee.first_name,
+            "last_name": obj.employee.last_name,
+            "pesel": obj.employee.pesel
+        }

@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django import forms
-from .models import UserProfile, Project, Client, ProjectTag, Empl_tag, Employee, Item, Requisition, RequisitionItem, Quarter
+from .models import UserProfile, Project, Client, ProjectTag, Empl_tag, Employee, Item, Requisition, RequisitionItem, Quarter, UserSettings, BrigadeMember
 
 class UserProfileAdminForm(forms.ModelForm):
     """Formularz do zarządzania uprawnieniami w adminie"""
@@ -193,3 +193,17 @@ class QuarterAdmin(admin.ModelAdmin):
             obj.created_by = request.user
         obj.updated_by = request.user
         super().save_model(request, obj, form, change)
+
+@admin.register(UserSettings)
+class UserSettingsAdmin(admin.ModelAdmin):
+    list_display = ('user', 'project', 'created_at', 'updated_at')
+    list_filter = ('project', 'created_at')
+    search_fields = ('user__username', 'user__email', 'project__name')
+    raw_id_fields = ('user', 'project')
+
+@admin.register(BrigadeMember)
+class BrigadeMemberAdmin(admin.ModelAdmin):
+    list_display = ('employee', 'brigade_leader', 'created_at')
+    list_filter = ('brigade_leader', 'created_at')
+    search_fields = ('employee__first_name', 'employee__last_name', 'brigade_leader__username')
+    raw_id_fields = ('employee', 'brigade_leader')
