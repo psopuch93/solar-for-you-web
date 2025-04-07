@@ -59,6 +59,8 @@ urlpatterns = [
     path('available-employees/', available_employees, name='available_employees'),
     path('update-employee-project/', update_employee_project, name='update_employee_project'),
     path('user-settings/', create_user_settings, name='create_user_settings'),
+    path('user-settings/me/', my_user_settings, name='my_user_settings'),
+    path('user-settings/', create_user_settings, name='create_user_settings'),
 
 ]
 

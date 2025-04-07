@@ -817,6 +817,13 @@ class UserSettingsViewSet(viewsets.ModelViewSet):
         return UserSettings.objects.filter(user=user)
 
     def perform_create(self, serializer):
+        # Sprawdź, czy ustawienia już istnieją - kluczowa zmiana!
+        existing_settings = UserSettings.objects.filter(user=self.request.user).first()
+        if existing_settings:
+            # Jeśli już istnieją, zwróć istniejące bez tworzenia nowych
+            return existing_settings
+
+        # Jeśli nie istnieją, utwórz nowe
         serializer.save(user=self.request.user)
 
     def update(self, request, *args, **kwargs):
@@ -901,27 +908,16 @@ class BrigadeMemberViewSet(viewsets.ModelViewSet):
 def my_user_settings(request):
     """Endpoint zwracający ustawienia zalogowanego użytkownika"""
     try:
-        settings, created = UserSettings.objects.get_or_create(
-            user=request.user,
-            defaults={'project': None}
-        )
+        # Podobnie, najpierw sprawdź czy ustawienia istnieją
+        try:
+            user_settings = UserSettings.objects.get(user=request.user)
+        except UserSettings.DoesNotExist:
+            # Jeśli nie istnieją, utwórz je
+            user_settings = UserSettings.objects.create(user=request.user, project=None)
 
-        # Użyj kontekstu, aby upewnić się, że projekt jest poprawnie serializowany
-        serializer = UserSettingsSerializer(settings, context={'request': request})
-
-        # Dodaj debug info
-        result = serializer.data
-
-        # Pokaż dodatkowe informacje w logach
-        print(f"User settings for {request.user.username}: {result}")
-        if settings.project:
-            print(f"Project assigned: {settings.project.name} (ID: {settings.project.id})")
-        else:
-            print("No project assigned")
-
-        return Response(result)
+        serializer = UserSettingsSerializer(user_settings)
+        return Response(serializer.data)
     except Exception as e:
-        print(f"Error in my_user_settings: {str(e)}")
         return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 # Widok do pobierania dostępnych pracowników (nie przypisanych do brygad)
@@ -994,13 +990,17 @@ def update_employee_project(request):
 def create_user_settings(request):
     """Create user settings if they don't exist"""
     try:
-        # Check if settings already exist
-        user_settings, created = UserSettings.objects.get_or_create(
-            user=request.user,
-            defaults={'project': None}
-        )
-
-        serializer = UserSettingsSerializer(user_settings)
-        return Response(serializer.data)
+        # Najpierw sprawdź, czy ustawienia już istnieją
+        try:
+            user_settings = UserSettings.objects.get(user=request.user)
+            # Jeśli już istnieją, po prostu je zwróć
+            serializer = UserSettingsSerializer(user_settings)
+            return Response(serializer.data)
+        except UserSettings.DoesNotExist:
+            # Tylko jeśli nie istnieją, to utwórz nowe
+            user_settings = UserSettings.objects.create(user=request.user, project=None)
+            serializer = UserSettingsSerializer(user_settings)
+            return Response(serializer.data)
     except Exception as e:
         return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+

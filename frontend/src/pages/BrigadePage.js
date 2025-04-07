@@ -97,30 +97,48 @@ const BrigadePage = () => {
         const projectsData = await projectsResponse.json();
         setProjects(projectsData);
 
-        // Pobierz ustawienia użytkownika
-        const userSettingsResponse = await fetch('/api/user-settings/me/', {
-          credentials: 'same-origin',
-        });
+        // Spróbuj pobrać ustawienia
+        let userSettingsData = null;
+        try {
+          const userSettingsResponse = await fetch('/api/user-settings/me/', {
+            credentials: 'same-origin',
+          });
 
-        if (!userSettingsResponse.ok) {
-          if (userSettingsResponse.status === 404) {
-            // Ustawienia użytkownika nie istnieją, trzeba je utworzyć
-            await createUserSettings();
+          if (userSettingsResponse.ok) {
+            userSettingsData = await userSettingsResponse.json();
+            console.log("Pobrano istniejące ustawienia:", userSettingsData);
           } else {
-            throw new Error('Nie udało się pobrać ustawień użytkownika');
+            console.log("Nie znaleziono ustawień użytkownika");
           }
-        } else {
-          const userSettingsData = await userSettingsResponse.json();
-            console.log("Dane z API user-settings/me/:", userSettingsData);
+        } catch (settingsError) {
+          console.error("Błąd przy pobieraniu ustawień:", settingsError);
+        }
 
-            setUserSettings(userSettingsData);
+        // Jeśli nie udało się pobrać ustawień, spróbuj je utworzyć
+        if (!userSettingsData) {
+          try {
+            console.log("Próba utworzenia nowych ustawień użytkownika");
+            const createResponse = await fetch('/api/user-settings/me/', {
+              method: 'GET',  // Zmiana na GET, który powinien utworzyć ustawienia jeśli nie istnieją
+              credentials: 'same-origin',
+            });
 
-            // Ustal faktyczny obiekt projektu lub NULL
-            const projectData = userSettingsData.project ? userSettingsData.project : null;
-            console.log("Dane projektu:", projectData);
+            if (createResponse.ok) {
+              userSettingsData = await createResponse.json();
+              console.log("Utworzono nowe ustawienia:", userSettingsData);
+            } else {
+              console.error("Nie udało się utworzyć ustawień:", createResponse.status);
+            }
+          } catch (createError) {
+            console.error("Błąd przy tworzeniu ustawień:", createError);
+          }
+        }
 
-            setUserProject(projectData);
-            setSelectedProjectId(projectData ? projectData.id : '');
+        // Ustawienie danych projektu i ustawień użytkownika
+        if (userSettingsData) {
+          setUserSettings(userSettingsData);
+          setUserProject(userSettingsData.project);
+          setSelectedProjectId(userSettingsData.project ? userSettingsData.project.id : '');
         }
 
         // Pobierz członków brygady
