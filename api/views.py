@@ -910,30 +910,34 @@ class BrigadeMemberViewSet(viewsets.ModelViewSet):
 def my_user_settings(request):
     """Endpoint zwracający ustawienia zalogowanego użytkownika"""
     try:
+        # Znajdź ustawienia użytkownika lub utwórz nowe
         user_settings, created = UserSettings.objects.get_or_create(
             user=request.user,
             defaults={'project': None}
         )
 
-        # Dodaj szczegóły projektu, jeśli istnieje
-        project_data = None
+        # Dodaj informacje o utworzeniu
+        response_data = {
+            'created': created,
+            'id': user_settings.id,
+            'user': user_settings.user.id,
+            'username': user_settings.user.username,
+            'project': user_settings.project.id if user_settings.project else None,
+            'created_at': user_settings.created_at,
+            'updated_at': user_settings.updated_at,
+        }
+
+        # Dodaj informacje o projekcie, jeśli istnieje
         if user_settings.project:
             project = user_settings.project
-            project_data = {
+            response_data['project_details'] = {
                 'id': project.id,
                 'name': project.name,
                 'status': project.status,
                 'status_display': project.get_status_display()
             }
 
-        serializer = UserSettingsSerializer(user_settings)
-        data = serializer.data
-
-        # Zastąp ID projektu pełnymi danymi
-        if project_data:
-            data['project'] = project_data
-
-        return Response(data)
+        return Response(response_data)
     except Exception as e:
         return Response(
             {'detail': f"Błąd pobierania ustawień: {str(e)}"},
