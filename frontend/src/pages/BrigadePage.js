@@ -107,6 +107,33 @@ const BrigadePage = () => {
           if (userSettingsResponse.ok) {
             userSettingsData = await userSettingsResponse.json();
             console.log("Pobrano istniejące ustawienia:", userSettingsData);
+
+            // Ustaw ustawienia użytkownika
+            setUserSettings(userSettingsData);
+
+            // Sprawdź, czy projekt istnieje
+            if (userSettingsData.project) {
+              // Jeśli projekt to tylko ID, pobierz pełne dane projektu
+              if (typeof userSettingsData.project === 'number') {
+                const projectResponse = await fetch(`/api/projects/${userSettingsData.project}/`, {
+                  credentials: 'same-origin',
+                });
+
+                if (projectResponse.ok) {
+                  const projectData = await projectResponse.json();
+                  setUserProject(projectData);
+                  setSelectedProjectId(projectData.id);
+                }
+              } else if (userSettingsData.project_details) {
+                // Jeśli mamy project_details, użyj ich
+                setUserProject(userSettingsData.project_details);
+                setSelectedProjectId(userSettingsData.project_details.id);
+              } else {
+                // Jeśli projekt to pełny obiekt, użyj go bezpośrednio
+                setUserProject(userSettingsData.project);
+                setSelectedProjectId(userSettingsData.project.id);
+              }
+            }
           } else {
             console.log("Nie znaleziono ustawień użytkownika");
           }
@@ -126,19 +153,34 @@ const BrigadePage = () => {
             if (createResponse.ok) {
               userSettingsData = await createResponse.json();
               console.log("Utworzono nowe ustawienia:", userSettingsData);
+
+              setUserSettings(userSettingsData);
+
+              if (userSettingsData.project) {
+                if (typeof userSettingsData.project === 'number') {
+                  const projectResponse = await fetch(`/api/projects/${userSettingsData.project}/`, {
+                    credentials: 'same-origin',
+                  });
+
+                  if (projectResponse.ok) {
+                    const projectData = await projectResponse.json();
+                    setUserProject(projectData);
+                    setSelectedProjectId(projectData.id);
+                  }
+                } else if (userSettingsData.project_details) {
+                  setUserProject(userSettingsData.project_details);
+                  setSelectedProjectId(userSettingsData.project_details.id);
+                } else {
+                  setUserProject(userSettingsData.project);
+                  setSelectedProjectId(userSettingsData.project.id);
+                }
+              }
             } else {
               console.error("Nie udało się utworzyć ustawień:", createResponse.status);
             }
           } catch (createError) {
             console.error("Błąd przy tworzeniu ustawień:", createError);
           }
-        }
-
-        // Ustawienie danych projektu i ustawień użytkownika
-        if (userSettingsData) {
-          setUserSettings(userSettingsData);
-          setUserProject(userSettingsData.project);
-          setSelectedProjectId(userSettingsData.project ? userSettingsData.project.id : '');
         }
 
         // Pobierz członków brygady

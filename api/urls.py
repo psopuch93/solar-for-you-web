@@ -62,7 +62,6 @@ urlpatterns = [
     path('available-employees/', available_employees, name='available_employees'),
     path('update-employee-project/', update_employee_project, name='update_employee_project'),
     path('user-settings/', create_user_settings, name='create_user_settings'),
-    path('user-settings/me/', my_user_settings, name='my_user_settings'),
     path('create-progress-report/', create_progress_report, name='create_progress_report'),
     path('progress-reports-for-date/', get_progress_reports_for_date, name='progress_reports_for_date'),
 ]

@@ -66,21 +66,34 @@ const ProgressReportPage = () => {
     try {
       // Pobierz ustawienia użytkownika
       const userSettingsResponse = await fetch('/api/user-settings/me/', {
-        credentials: 'same-origin',
-      });
+          credentials: 'same-origin',
+        });
 
-      if (userSettingsResponse.ok) {
-        const userSettingsData = await userSettingsResponse.json();
-        setUserSettings(userSettingsData);
-        setUserProject(userSettingsData.project);
+        if (userSettingsResponse.ok) {
+          const userSettingsData = await userSettingsResponse.json();
+          setUserSettings(userSettingsData);
 
-        // Jeśli mamy projekt, spróbuj załadować raport dla bieżącej daty
-        if (userSettingsData.project) {
-          await fetchReportForDate();
+          // Sprawdź, czy projekt istnieje
+          if (userSettingsData.project) {
+            // Jeśli projekt to tylko ID, pobierz pełne dane projektu
+            if (typeof userSettingsData.project === 'number') {
+              const projectResponse = await fetch(`/api/projects/${userSettingsData.project}/`, {
+                credentials: 'same-origin',
+              });
+
+              if (projectResponse.ok) {
+                const projectData = await projectResponse.json();
+                setUserProject(projectData);
+              }
+            } else if (userSettingsData.project_details) {
+              // Jeśli mamy project_details, użyj ich
+              setUserProject(userSettingsData.project_details);
+            } else {
+              // Jeśli projekt to pełny obiekt, użyj go bezpośrednio
+              setUserProject(userSettingsData.project);
+            }
+          }
         }
-      } else {
-        console.error("Nie udało się pobrać ustawień użytkownika:", userSettingsResponse.status);
-      }
 
       // Pobierz członków brygady
       const brigadeResponse = await fetch('/api/brigade-members/', {

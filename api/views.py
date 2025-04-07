@@ -915,8 +915,25 @@ def my_user_settings(request):
             defaults={'project': None}
         )
 
+        # Dodaj szczegóły projektu, jeśli istnieje
+        project_data = None
+        if user_settings.project:
+            project = user_settings.project
+            project_data = {
+                'id': project.id,
+                'name': project.name,
+                'status': project.status,
+                'status_display': project.get_status_display()
+            }
+
         serializer = UserSettingsSerializer(user_settings)
-        return Response(serializer.data)
+        data = serializer.data
+
+        # Zastąp ID projektu pełnymi danymi
+        if project_data:
+            data['project'] = project_data
+
+        return Response(data)
     except Exception as e:
         return Response(
             {'detail': f"Błąd pobierania ustawień: {str(e)}"},
