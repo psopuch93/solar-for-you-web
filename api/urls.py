@@ -46,24 +46,23 @@ router.register(r'progress-report-entries', ProgressReportEntryViewSet)
 router.register(r'progress-report-images', ProgressReportImageViewSet)
 
 urlpatterns = [
-    # Dołącz ścieżki routera
-    path('', include(router.urls)),
-    # Dodaj ścieżkę do sprawdzania unikalności nazwy projektu
-    path('check-project-name/', check_project_name, name='check_project_name'),
-    path('check-pesel/', check_pesel, name='check_pesel'),
-    path('validate-requisition/', validate_requisition, name='validate_requisition'),
-    # Endpoint do eksportu zapotrzebowań
-    path('export-requisitions/', export_requisitions, name='export_requisitions'),
-    # Dodaj nowy endpoint dla CSRF
-    path('csrf/', get_csrf_token, name='get_csrf_token'),
-    path('assign-employee-to-quarter/', assign_employee_to_quarter, name='assign_employee_to_quarter'),
-    path('remove-employee-from-quarter/', remove_employee_from_quarter, name='remove_employee_from_quarter'),
+    # Bezpośrednie ścieżki muszą być zdefiniowane PRZED include(router.urls)
     path('user-settings/me/', my_user_settings, name='my_user_settings'),
     path('available-employees/', available_employees, name='available_employees'),
     path('update-employee-project/', update_employee_project, name='update_employee_project'),
     path('user-settings/', create_user_settings, name='create_user_settings'),
     path('create-progress-report/', create_progress_report, name='create_progress_report'),
     path('progress-reports-for-date/', get_progress_reports_for_date, name='progress_reports_for_date'),
+    path('check-project-name/', check_project_name, name='check_project_name'),
+    path('check-pesel/', check_pesel, name='check_pesel'),
+    path('validate-requisition/', validate_requisition, name='validate_requisition'),
+    path('export-requisitions/', export_requisitions, name='export_requisitions'),
+    path('csrf/', get_csrf_token, name='get_csrf_token'),
+    path('assign-employee-to-quarter/', assign_employee_to_quarter, name='assign_employee_to_quarter'),
+    path('remove-employee-from-quarter/', remove_employee_from_quarter, name='remove_employee_from_quarter'),
+
+    # Dołącz ścieżki routera NA KOŃCU
+    path('', include(router.urls)),
 ]
 
 # Dodaj obsługę plików mediów w trybie deweloperskim
