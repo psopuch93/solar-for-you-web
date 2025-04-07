@@ -818,13 +818,15 @@ class UserSettingsViewSet(viewsets.ModelViewSet):
         # Zwykły użytkownik widzi tylko swoje ustawienia
         return UserSettings.objects.filter(user=user)
 
-    def perform_create(self, serializer):
-        # Sprawdź, czy ustawienia już istnieją - kluczowa zmiana!
-        existing_settings = UserSettings.objects.filter(user=self.request.user).first()
+    def create(self, request, *args, **kwargs):
+        # Sprawdź, czy ustawienia już istnieją
+        existing_settings = UserSettings.objects.filter(user=request.user).first()
         if existing_settings:
-            # Jeśli już istnieją, zwróć istniejące bez tworzenia nowych
-            return existing_settings
+            serializer = self.get_serializer(existing_settings)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return super().create(request, *args, **kwargs)
 
+    def perform_create(self, serializer):
         # Jeśli nie istnieją, utwórz nowe
         serializer.save(user=self.request.user)
 
@@ -1014,19 +1016,25 @@ def update_employee_project(request):
 def create_user_settings(request):
     """Create user settings if they don't exist"""
     try:
-        # Najpierw sprawdź, czy ustawienia już istnieją
+        # Sprawdź, czy istnieją już ustawienia dla tego użytkownika
         try:
-            user_settings = UserSettings.objects.get(user=request.user)
-            # Jeśli już istnieją, po prostu je zwróć
-            serializer = UserSettingsSerializer(user_settings)
+            settings = UserSettings.objects.get(user=request.user)
+            # Jeśli istnieją, zwróć je
+            serializer = UserSettingsSerializer(settings)
             return Response(serializer.data)
         except UserSettings.DoesNotExist:
-            # Tylko jeśli nie istnieją, to utwórz nowe
-            user_settings = UserSettings.objects.create(user=request.user, project=None)
-            serializer = UserSettingsSerializer(user_settings)
+            # Jeśli nie istnieją, utwórz nowe bez przypisanego projektu
+            settings = UserSettings.objects.create(
+                user=request.user,
+                project=None
+            )
+            serializer = UserSettingsSerializer(settings)
             return Response(serializer.data)
     except Exception as e:
-        return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {'detail': f"Błąd podczas tworzenia ustawień: {str(e)}"},
+            status=status.HTTP_400_BAD_REQUEST
+        )
 
 class ProgressReportViewSet(viewsets.ModelViewSet):
     """API endpoint dla raportów postępu"""
