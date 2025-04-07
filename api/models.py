@@ -445,3 +445,20 @@ class ProgressReportEntry(models.Model):
         verbose_name = "Wpis w raporcie postępu"
         verbose_name_plural = "Wpisy w raportach postępu"
         unique_together = ('report', 'employee')  # Jeden wpis dla pracownika w raporcie
+
+class ProgressReportImage(models.Model):
+    """Model dla zdjęć w raportach postępu prac"""
+    report = models.ForeignKey(ProgressReport, on_delete=models.CASCADE, related_name='images', verbose_name="Raport")
+    image = models.ImageField(upload_to='progress_report_images/', verbose_name="Zdjęcie")
+    name = models.CharField(max_length=255, blank=True, null=True, verbose_name="Nazwa zdjęcia")
+    description = models.TextField(blank=True, null=True, verbose_name="Opis zdjęcia")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Data utworzenia")
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='created_progress_report_images', verbose_name="Utworzony przez")
+
+    class Meta:
+        verbose_name = "Zdjęcie raportu postępu"
+        verbose_name_plural = "Zdjęcia raportów postępu"
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"Zdjęcie raportu {self.report.date} ({self.id})"

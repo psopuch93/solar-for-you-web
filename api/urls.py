@@ -1,5 +1,3 @@
-# Pełna zawartość api/urls.py
-
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from django.views.decorators.csrf import ensure_csrf_cookie
@@ -13,7 +11,9 @@ from .views import (
     validate_requisition, export_requisitions, assign_employee_to_quarter,
     remove_employee_from_quarter, QuarterViewSet, QuarterImageViewSet,
     UserSettingsViewSet, BrigadeMemberViewSet, my_user_settings, available_employees,
-    update_employee_project, create_user_settings
+    update_employee_project, create_user_settings, ProgressReportViewSet,
+    ProgressReportEntryViewSet, ProgressReportImageViewSet, create_progress_report,
+    get_progress_reports_for_date
 )
 
 # Dodaj nową funkcję obsługującą CSRF
@@ -41,6 +41,9 @@ router.register(r'quarters', QuarterViewSet)
 router.register(r'quarter-images', QuarterImageViewSet)
 router.register(r'user-settings', UserSettingsViewSet)
 router.register(r'brigade-members', BrigadeMemberViewSet)
+router.register(r'progress-reports', ProgressReportViewSet)
+router.register(r'progress-report-entries', ProgressReportEntryViewSet)
+router.register(r'progress-report-images', ProgressReportImageViewSet)
 
 urlpatterns = [
     # Dołącz ścieżki routera
@@ -60,7 +63,8 @@ urlpatterns = [
     path('update-employee-project/', update_employee_project, name='update_employee_project'),
     path('user-settings/', create_user_settings, name='create_user_settings'),
     path('user-settings/me/', my_user_settings, name='my_user_settings'),
-
+    path('create-progress-report/', create_progress_report, name='create_progress_report'),
+    path('progress-reports-for-date/', get_progress_reports_for_date, name='progress_reports_for_date'),
 ]
 
 # Dodaj obsługę plików mediów w trybie deweloperskim

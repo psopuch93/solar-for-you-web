@@ -17,7 +17,9 @@ from .serializers import (
     UserSerializer, UserProfileSerializer, ProjectSerializer,
     ClientSerializer, ProjectTagSerializer, EmployeeSerializer, EmplTagSerializer,
     ItemSerializer, RequisitionSerializer, RequisitionItemSerializer, QuarterSerializer, QuarterImageSerializer,
-    UserSettingsSerializer, BrigadeMemberSerializer
+    UserSettingsSerializer, BrigadeMemberSerializer, ProgressReportSerializer,
+    ProgressReport, ProgressReportEntrySerializer, ProgressReportEntry, ProgressReportImageSerializer,
+    ProgressReportImage
 )
 
 class IsAdminOrOwner(permissions.BasePermission):
@@ -1005,3 +1007,145 @@ def create_user_settings(request):
     except Exception as e:
         return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
+class ProgressReportViewSet(viewsets.ModelViewSet):
+    """API endpoint dla raportów postępu"""
+    queryset = ProgressReport.objects.all()
+    serializer_class = ProgressReportSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        """Filtrowanie raportów - użytkownik widzi tylko swoje raporty lub wszystkie, jeśli jest adminem"""
+        user = self.request.user
+
+        # Admin widzi wszystkie raporty
+        if user.is_staff:
+            return ProgressReport.objects.all().order_by('-date')
+
+        # Pozostali użytkownicy widzą tylko swoje raporty
+        return ProgressReport.objects.filter(created_by=user).order_by('-date')
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user)
+
+class ProgressReportEntryViewSet(viewsets.ModelViewSet):
+    """API endpoint dla wpisów w raportach postępu"""
+    queryset = ProgressReportEntry.objects.all()
+    serializer_class = ProgressReportEntrySerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        """Filtrowanie wpisów - powiązanie z raportem"""
+        report_id = self.request.query_params.get('report_id')
+        if report_id:
+            return ProgressReportEntry.objects.filter(report_id=report_id)
+        return ProgressReportEntry.objects.all()
+
+class ProgressReportImageViewSet(viewsets.ModelViewSet):
+    """API endpoint dla zdjęć raportów postępu"""
+    queryset = ProgressReportImage.objects.all()
+    serializer_class = ProgressReportImageSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [parsers.MultiPartParser, parsers.FormParser]
+
+    def get_queryset(self):
+        """Filtrowanie zdjęć po raporcie, jeśli podano parametr report_id"""
+        queryset = super().get_queryset()
+        report_id = self.request.query_params.get('report_id')
+        if report_id:
+            queryset = queryset.filter(report_id=report_id)
+        return queryset
+
+    def perform_create(self, serializer):
+        """Dodaje bieżącego użytkownika jako created_by"""
+        serializer.save(created_by=self.request.user)
+
+    def get_serializer_context(self):
+        """Dodaje request do kontekstu serializera, aby móc generować pełne URL-e"""
+        context = super().get_serializer_context()
+        context['request'] = self.request
+        return context
+
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+def create_progress_report(request):
+    """Endpoint do tworzenia raportu postępu wraz z wpisami w jednym żądaniu"""
+    try:
+        # Dane raportu
+        report_data = {
+            'date': request.data.get('date'),
+            'project': request.data.get('project')
+        }
+
+        # Walidacja
+        if not report_data['date'] or not report_data['project']:
+            return Response(
+                {'detail': 'Data i projekt są wymagane'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Sprawdź, czy już istnieje raport z tą datą i projektem dla tego użytkownika
+        existing_report = ProgressReport.objects.filter(
+            date=report_data['date'],
+            project=report_data['project'],
+            created_by=request.user
+        ).first()
+
+        if existing_report:
+            # Zwróć istniejący raport
+            serializer = ProgressReportSerializer(existing_report)
+            return Response(serializer.data)
+
+        # Utwórz raport
+        report = ProgressReport.objects.create(
+            date=report_data['date'],
+            project_id=report_data['project'],
+            created_by=request.user
+        )
+
+        # Utwórz wpisy
+        entries_data = request.data.get('entries', [])
+        for entry_data in entries_data:
+            if entry_data.get('employee') and entry_data.get('hours_worked') is not None:
+                ProgressReportEntry.objects.create(
+                    report=report,
+                    employee_id=entry_data['employee'],
+                    hours_worked=entry_data['hours_worked'],
+                    notes=entry_data.get('notes', '')
+                )
+
+        # Zwróć utworzony raport z wpisami
+        serializer = ProgressReportSerializer(report)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    except Exception as e:
+        return Response(
+            {'detail': str(e)},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def get_progress_reports_for_date(request):
+    """Zwraca raporty postępu dla określonej daty i użytkownika"""
+    try:
+        date = request.query_params.get('date')
+        if not date:
+            return Response(
+                {'detail': 'Data jest wymagana'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Pobierz raporty dla danej daty
+        reports = ProgressReport.objects.filter(
+            date=date,
+            created_by=request.user
+        )
+
+        serializer = ProgressReportSerializer(reports, many=True)
+        return Response(serializer.data)
+
+    except Exception as e:
+        return Response(
+            {'detail': str(e)},
+            status=status.HTTP_400_BAD_REQUEST
+        )

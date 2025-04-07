@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
-from .models import UserProfile, Project, Client, ProjectTag, Empl_tag, Employee, Requisition, RequisitionItem, Item, Quarter, QuarterImage, UserSettings, BrigadeMember
+from .models import UserProfile, Project, Client, ProjectTag, Empl_tag, Employee, Requisition, RequisitionItem, Item, Quarter, QuarterImage, UserSettings, BrigadeMember, ProgressReportEntry, ProgressReportImage, ProgressReport
 
 class UserSerializer(serializers.ModelSerializer):
     """Serializer dla modelu User"""
@@ -396,3 +396,61 @@ class BrigadeMemberSerializer(serializers.ModelSerializer):
             "last_name": obj.employee.last_name,
             "pesel": obj.employee.pesel
         }
+
+class ProgressReportImageSerializer(serializers.ModelSerializer):
+    """Serializer dla zdjęć raportów postępu"""
+    image_url = serializers.SerializerMethodField()
+    created_by_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ProgressReportImage
+        fields = ('id', 'report', 'image', 'image_url', 'name', 'description', 'created_at', 'created_by', 'created_by_name')
+        read_only_fields = ('id', 'created_at', 'created_by')
+
+    def get_image_url(self, obj):
+        """Zwraca pełny URL do zdjęcia"""
+        if obj.image:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.image.url)
+            return obj.image.url
+        return None
+
+    def get_created_by_name(self, obj):
+        """Zwraca nazwę użytkownika, który dodał zdjęcie"""
+        if obj.created_by:
+            return f"{obj.created_by.first_name} {obj.created_by.last_name}".strip() or obj.created_by.username
+        return None
+
+class ProgressReportEntrySerializer(serializers.ModelSerializer):
+    """Serializer dla wpisów w raportach postępu"""
+    employee_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ProgressReportEntry
+        fields = ('id', 'report', 'employee', 'employee_name', 'hours_worked', 'notes')
+        read_only_fields = ('id',)
+
+    def get_employee_name(self, obj):
+        return f"{obj.employee.first_name} {obj.employee.last_name}" if obj.employee else None
+
+class ProgressReportSerializer(serializers.ModelSerializer):
+    """Serializer dla raportów postępu"""
+    entries = ProgressReportEntrySerializer(many=True, read_only=True)
+    images = ProgressReportImageSerializer(many=True, read_only=True)
+    project_name = serializers.SerializerMethodField()
+    created_by_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ProgressReport
+        fields = ('id', 'date', 'project', 'project_name', 'created_by', 'created_by_name',
+                  'created_at', 'updated_at', 'entries', 'images')
+        read_only_fields = ('id', 'created_at', 'updated_at', 'created_by')
+
+    def get_project_name(self, obj):
+        return obj.project.name if obj.project else None
+
+    def get_created_by_name(self, obj):
+        if obj.created_by:
+            return f"{obj.created_by.first_name} {obj.created_by.last_name}".strip() or obj.created_by.username
+        return None
