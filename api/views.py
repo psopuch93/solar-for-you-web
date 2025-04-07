@@ -908,17 +908,18 @@ class BrigadeMemberViewSet(viewsets.ModelViewSet):
 def my_user_settings(request):
     """Endpoint zwracający ustawienia zalogowanego użytkownika"""
     try:
-        # Podobnie, najpierw sprawdź czy ustawienia istnieją
-        try:
-            user_settings = UserSettings.objects.get(user=request.user)
-        except UserSettings.DoesNotExist:
-            # Jeśli nie istnieją, utwórz je
-            user_settings = UserSettings.objects.create(user=request.user, project=None)
+        user_settings, created = UserSettings.objects.get_or_create(
+            user=request.user,
+            defaults={'project': None}
+        )
 
         serializer = UserSettingsSerializer(user_settings)
         return Response(serializer.data)
     except Exception as e:
-        return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {'detail': f"Błąd pobierania ustawień: {str(e)}"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
 
 # Widok do pobierania dostępnych pracowników (nie przypisanych do brygad)
 @api_view(['GET'])

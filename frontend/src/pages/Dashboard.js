@@ -28,6 +28,7 @@ import { EmployeeProvider } from '../contexts/EmployeeContext';
 import { RequisitionProvider } from '../contexts/RequisitionContext';
 import { getCsrfToken } from '../utils/csrfToken';
 import BrigadePage from './BrigadePage';
+import ProgressReportPage from './ProgressReportPage';
 
 
 // Komponenty pomocnicze
@@ -143,6 +144,7 @@ const BusinessDashboard = memo(({ setIsAuthenticated }) => {
                     <Route path="/requests/*" element={<RequisitionsPage />} />
                     <Route path="/warehouse/*" element={<WarehousePage />} />
                     <Route path="/brigade" element={<BrigadePage />} />
+                    <Route path="/reports/*" element={<ProgressReportPage />} />
                     {/* Pozostałe trasy można dodać w przyszłości */}
                     <Route path="*" element={<div>Strona nie została znaleziona</div>} />
                   </Routes>

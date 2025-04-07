@@ -414,3 +414,34 @@ def update_brigade_members_project(sender, instance, **kwargs):
             if member.employee.current_project != instance.project:
                 member.employee.current_project = instance.project
                 member.employee.save()
+
+class ProgressReport(models.Model):
+    """Model reprezentujący raport postępu prac z danego dnia"""
+    date = models.DateField(verbose_name="Data raportu")
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='progress_reports', verbose_name="Projekt")
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='created_progress_reports', verbose_name="Utworzony przez")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Data utworzenia")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Data aktualizacji")
+
+    def __str__(self):
+        return f"Raport z dnia {self.date} - {self.project.name}"
+
+    class Meta:
+        verbose_name = "Raport postępu"
+        verbose_name_plural = "Raporty postępu"
+        unique_together = ('date', 'project', 'created_by')  # Jeden raport na dzień dla projektu od danego użytkownika
+
+class ProgressReportEntry(models.Model):
+    """Model reprezentujący pojedynczy wpis w raporcie postępu dla danego pracownika"""
+    report = models.ForeignKey(ProgressReport, on_delete=models.CASCADE, related_name='entries', verbose_name="Raport")
+    employee = models.ForeignKey(Employee, on_delete=models.CASCADE, related_name='progress_entries', verbose_name="Pracownik")
+    hours_worked = models.DecimalField(max_digits=4, decimal_places=1, default=0, verbose_name="Przepracowane godziny")
+    notes = models.TextField(blank=True, null=True, verbose_name="Notatki")
+
+    def __str__(self):
+        return f"{self.employee} - {self.hours_worked}h ({self.report.date})"
+
+    class Meta:
+        verbose_name = "Wpis w raporcie postępu"
+        verbose_name_plural = "Wpisy w raportach postępu"
+        unique_together = ('report', 'employee')  # Jeden wpis dla pracownika w raporcie
