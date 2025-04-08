@@ -31,6 +31,7 @@ import BrigadePage from './BrigadePage';
 import ProgressReportPage from './ProgressReportPage';
 
 
+
 // Komponenty pomocnicze
 const SidebarItem = memo(({ icon: Icon, label, isExpanded, to }) => (
   <NavLink
@@ -84,7 +85,8 @@ const BusinessDashboard = memo(({ setIsAuthenticated }) => {
       { icon: Warehouse, label: 'Magazyn', path: '/dashboard/warehouse' },
       { icon: Users, label: 'Brygada', path: '/dashboard/brigade' }, // Nowa sekcja
       { icon: Wrench, label: 'Narzędzia', path: '/dashboard/tools' }, // Nowa sekcja
-      { icon: HelpCircle, label: 'Zgłoszenia', path: '/dashboard/tickets' }
+      { icon: HelpCircle, label: 'Zgłoszenia', path: '/dashboard/tickets' },
+      { icon: Users, label: 'Zapotrzebowania HR', path: '/dashboard/requests/hr' },
     ];
 
   return (

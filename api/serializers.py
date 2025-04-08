@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
-from .models import UserProfile, Project, Client, ProjectTag, Empl_tag, Employee, Requisition, RequisitionItem, Item, Quarter, QuarterImage, UserSettings, BrigadeMember, ProgressReportEntry, ProgressReportImage, ProgressReport
+from .models import UserProfile, Project, Client, ProjectTag, Empl_tag, Employee, Requisition, RequisitionItem, Item, Quarter, QuarterImage, UserSettings, BrigadeMember, ProgressReportEntry, ProgressReportImage, ProgressReport, HRRequisition, HRRequisitionPosition
 
 class UserSerializer(serializers.ModelSerializer):
     """Serializer dla modelu User"""
@@ -454,3 +454,57 @@ class ProgressReportSerializer(serializers.ModelSerializer):
         if obj.created_by:
             return f"{obj.created_by.first_name} {obj.created_by.last_name}".strip() or obj.created_by.username
         return None
+
+class HRRequisitionPositionSerializer(serializers.ModelSerializer):
+    """Serializer dla modelu HRRequisitionPosition"""
+    position_display = serializers.CharField(source='get_position_display', read_only=True)
+
+    class Meta:
+        model = HRRequisitionPosition
+        fields = ('id', 'hr_requisition', 'position', 'position_display', 'quantity', 'created_at', 'updated_at')
+        read_only_fields = ('id', 'created_at', 'updated_at')
+
+class HRRequisitionSerializer(serializers.ModelSerializer):
+    """Serializer dla modelu HRRequisition"""
+    created_by_name = serializers.SerializerMethodField()
+    updated_by_name = serializers.SerializerMethodField()
+    project_name = serializers.SerializerMethodField()
+    positions = HRRequisitionPositionSerializer(many=True, read_only=True)
+    status_display = serializers.SerializerMethodField()
+    experience_display = serializers.CharField(source='get_experience_display', read_only=True)
+    current_user_id = serializers.SerializerMethodField()
+
+    class Meta:
+        model = HRRequisition
+        fields = ('id', 'number', 'project', 'project_name', 'deadline',
+                  'status', 'status_display', 'special_requirements', 'experience',
+                  'experience_display', 'comment', 'positions', 'created_at', 'updated_at',
+                  'created_by', 'created_by_name', 'updated_by', 'updated_by_name',
+                  'current_user_id')
+        read_only_fields = ('id', 'number', 'created_at', 'updated_at', 'created_by', 'updated_by')
+
+    def get_current_user_id(self, obj):
+        """Zwraca ID aktualnie zalogowanego użytkownika"""
+        request = self.context.get('request')
+        if request and hasattr(request, 'user'):
+            return request.user.id
+        return None
+
+    def get_created_by_name(self, obj):
+        return obj.created_by.get_full_name() if obj.created_by else '-'
+
+    def get_updated_by_name(self, obj):
+        return obj.updated_by.get_full_name() if obj.updated_by else '-'
+
+    def get_project_name(self, obj):
+        return obj.project.name if obj.project else None
+
+    def get_status_display(self, obj):
+        status_map = {
+            'to_accept': 'Do akceptacji',
+            'accepted': 'Zaakceptowano',
+            'rejected': 'Odrzucono',
+            'in_progress': 'W trakcie realizacji',
+            'completed': 'Zrealizowano'
+        }
+        return status_map.get(obj.status, obj.status)

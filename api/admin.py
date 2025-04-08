@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django import forms
-from .models import UserProfile, Project, Client, ProjectTag, Empl_tag, Employee, Item, Requisition, RequisitionItem, Quarter, UserSettings, BrigadeMember
+from .models import UserProfile, Project, Client, ProjectTag, Empl_tag, Employee, Item, Requisition, RequisitionItem, Quarter, UserSettings, BrigadeMember, HRRequisitionPosition, HRRequisition
 
 class UserProfileAdminForm(forms.ModelForm):
     """Formularz do zarządzania uprawnieniami w adminie"""
@@ -207,3 +207,25 @@ class BrigadeMemberAdmin(admin.ModelAdmin):
     list_filter = ('brigade_leader', 'created_at')
     search_fields = ('employee__first_name', 'employee__last_name', 'brigade_leader__username')
     raw_id_fields = ('employee', 'brigade_leader')
+
+class HRRequisitionPositionInline(admin.TabularInline):
+    """Inline dla pozycji zapotrzebowań HR"""
+    model = HRRequisitionPosition
+    extra = 1
+    readonly_fields = ('created_at', 'updated_at')
+
+@admin.register(HRRequisition)
+class HRRequisitionAdmin(admin.ModelAdmin):
+    """Panel administracyjny dla zapotrzebowań HR"""
+    list_display = ('number', 'project', 'deadline', 'status', 'experience', 'created_at')
+    list_filter = ('status', 'experience', 'created_at')
+    search_fields = ('number', 'project__name', 'special_requirements')
+    readonly_fields = ('created_at', 'updated_at', 'number')
+    inlines = [HRRequisitionPositionInline]
+
+    def save_model(self, request, obj, form, change):
+        """Automatycznie ustaw użytkownika tworzącego/aktualizującego"""
+        if not change:  # Jeśli to nowy obiekt
+            obj.created_by = request.user
+        obj.updated_by = request.user
+        super().save_model(request, obj, form, change)

@@ -462,3 +462,108 @@ class ProgressReportImage(models.Model):
 
     def __str__(self):
         return f"Zdjęcie raportu {self.report.date} ({self.id})"
+
+class HRRequisition(models.Model):
+    """Model dla zapotrzebowań HR"""
+
+    # Opcje stanowisk
+    POSITION_CHOICES = [
+        ('brygadzista', 'Brygadzista'),
+        ('brygada_elektryków', 'Brygada elektryków'),
+        ('brygada_monterów', 'Brygada monterów'),
+        ('elektromonter', 'Elektromonter'),
+        ('kafar', 'Kafar'),
+        ('koparka', 'Koparka'),
+        ('mini_ladowarka', 'Mini ładowarka gąsienicowa'),
+        ('monter', 'Monter'),
+        ('starszy_elektryk', 'Starszy elektryk'),
+        ('starszy_monter', 'Starszy monter'),
+        ('miernica', 'Miernica'),
+    ]
+
+    # Opcje doświadczenia
+    EXPERIENCE_CHOICES = [
+        ('konstrukcja', 'Na konstrukcji'),
+        ('panele', 'Na panelach'),
+        ('elektryka', 'Elektryka'),
+        ('operator', 'Operator'),
+        ('brak', 'Brak'),
+    ]
+
+    number = models.CharField(max_length=100, unique=True, verbose_name="Numer zapotrzebowania")
+    project = models.ForeignKey(Project, on_delete=models.SET_NULL, null=True, related_name='hr_requisitions', verbose_name="Projekt")
+    deadline = models.DateField(verbose_name="Termin realizacji")
+    status = models.CharField(
+        max_length=20,
+        choices=Requisition.REQUISITION_STATUS_CHOICES,
+        default='to_accept',
+        verbose_name="Status"
+    )
+    special_requirements = models.TextField(blank=True, null=True, verbose_name="Specjalne wymagania")
+    experience = models.CharField(
+        max_length=20,
+        choices=EXPERIENCE_CHOICES,
+        default='brak',
+        verbose_name="Wymagane doświadczenie"
+    )
+    comment = models.TextField(blank=True, null=True, verbose_name="Komentarz")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Data utworzenia")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Data aktualizacji")
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='created_hr_requisitions', verbose_name="Utworzony przez")
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='updated_hr_requisitions', verbose_name="Zaktualizowany przez")
+    email_sent = models.BooleanField(default=False, verbose_name="E-mail wysłany")
+
+    def __str__(self):
+        return f"{self.number} - {self.project.name if self.project else 'Brak projektu'}"
+
+    def save(self, *args, **kwargs):
+        # Generowanie numeru zapotrzebowania HR, jeśli nie jest ustawiony
+        if not self.number:
+            today = datetime.date.today()
+            year = today.year
+            month = today.month
+            day = today.day
+
+            # Prefiks numeru zapotrzebowania HR dla dzisiejszego dnia
+            prefix = f"HR/{year}/{month:02d}/{day:02d}/"
+
+            # Znajdź zapotrzebowania z tym samym prefiksem (tego samego dnia)
+            today_requisitions = HRRequisition.objects.filter(
+                number__startswith=prefix
+            )
+
+            # Znajdź najwyższy numer
+            max_number = 0
+            for req in today_requisitions:
+                try:
+                    # Wyciągnij numer z końca (po ostatnim "/")
+                    num = int(req.number.split('/')[-1])
+                    if num > max_number:
+                        max_number = num
+                except (ValueError, IndexError):
+                    pass
+
+            # Ustaw nowy numer jako najwyższy + 1
+            self.number = f"{prefix}{max_number + 1}"
+
+        super().save(*args, **kwargs)
+
+    class Meta:
+        verbose_name = "Zapotrzebowanie HR"
+        verbose_name_plural = "Zapotrzebowania HR"
+
+
+class HRRequisitionPosition(models.Model):
+    """Model dla pozycji (stanowisk) w zapotrzebowaniu HR"""
+    hr_requisition = models.ForeignKey('HRRequisition', on_delete=models.CASCADE, related_name='positions', verbose_name="Zapotrzebowanie HR")
+    position = models.CharField(max_length=50, choices=HRRequisition.POSITION_CHOICES, verbose_name="Stanowisko")
+    quantity = models.PositiveIntegerField(default=1, verbose_name="Ilość")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Data utworzenia")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Data aktualizacji")
+
+    def __str__(self):
+        return f"{self.get_position_display()} x {self.quantity} w {self.hr_requisition.number}"
+
+    class Meta:
+        verbose_name = "Pozycja zapotrzebowania HR"
+        verbose_name_plural = "Pozycje zapotrzebowań HR"

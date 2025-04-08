@@ -12,14 +12,14 @@ from django.db.models import Q
 from django.utils.decorators import method_decorator
 import datetime
 import json
-from .models import UserProfile, Project, Client, ProjectTag, Employee, Empl_tag, Requisition, Item, RequisitionItem, Quarter, QuarterImage, UserSettings, BrigadeMember
+from .models import UserProfile, Project, Client, ProjectTag, Employee, Empl_tag, Requisition, Item, RequisitionItem, Quarter, QuarterImage, UserSettings, BrigadeMember,HRRequisitionPosition, HRRequisition
 from .serializers import (
     UserSerializer, UserProfileSerializer, ProjectSerializer,
     ClientSerializer, ProjectTagSerializer, EmployeeSerializer, EmplTagSerializer,
     ItemSerializer, RequisitionSerializer, RequisitionItemSerializer, QuarterSerializer, QuarterImageSerializer,
     UserSettingsSerializer, BrigadeMemberSerializer, ProgressReportSerializer,
     ProgressReport, ProgressReportEntrySerializer, ProgressReportEntry, ProgressReportImageSerializer,
-    ProgressReportImage
+    ProgressReportImage, HRRequisitionPositionSerializer, HRRequisitionSerializer
 )
 
 class IsAdminOrOwner(permissions.BasePermission):
@@ -1178,3 +1178,157 @@ def get_progress_reports_for_date(request):
             {'detail': str(e)},
             status=status.HTTP_400_BAD_REQUEST
         )
+
+class HRRequisitionPositionViewSet(viewsets.ModelViewSet):
+    """API endpoint dla pozycji zapotrzebowań HR"""
+    queryset = HRRequisitionPosition.objects.all()
+    serializer_class = HRRequisitionPositionSerializer
+    permission_classes = [permissions.IsAuthenticated, HasModulePrivilege]
+    required_privilege = 'manage_hr_requisitions'
+
+class HRRequisitionViewSet(viewsets.ModelViewSet):
+    """API endpoint dla zapotrzebowań HR"""
+    queryset = HRRequisition.objects.all()
+    serializer_class = HRRequisitionSerializer
+    permission_classes = [permissions.IsAuthenticated, HasModulePrivilege]
+    required_privilege = 'manage_hr_requisitions'
+
+    def get_queryset(self):
+        """Filtruj zapotrzebowania z obsługą wyszukiwania"""
+        user = self.request.user
+        # Użytkownicy z uprawnieniem 'view_all_requisitions' lub admin mogą widzieć wszystkie zapotrzebowania
+        if user.is_staff or hasattr(user, 'profile') and user.profile.has_privilege('view_all_requisitions'):
+            queryset = HRRequisition.objects.all().order_by('-created_at')
+        else:
+            # Pozostali użytkownicy widzą tylko swoje zapotrzebowania
+            queryset = HRRequisition.objects.filter(created_by=user).order_by('-created_at')
+
+        # Filtruj po frazie wyszukiwania
+        search_term = self.request.query_params.get('search', None)
+        if search_term:
+            # Wyszukiwanie w podstawowych polach zapotrzebowania
+            queryset = queryset.filter(
+                Q(number__icontains=search_term) |
+                Q(comment__icontains=search_term) |
+                Q(special_requirements__icontains=search_term) |
+                Q(project__name__icontains=search_term)
+            )
+
+        return queryset.distinct()
+
+    def get_serializer_context(self):
+        """Dodaj request do kontekstu serializera, aby mieć dostęp do aktualnego użytkownika"""
+        context = super().get_serializer_context()
+        context['request'] = self.request
+        return context
+
+    def perform_create(self, serializer):
+        """
+        Proces tworzenia zapotrzebowania HR
+        """
+        requisition = serializer.save(
+            created_by=self.request.user,
+            updated_by=self.request.user
+        )
+
+    def perform_update(self, serializer):
+        """
+        Obsługa aktualizacji zapotrzebowania HR
+        """
+        # Pobierz aktualny stan przed aktualizacją
+        instance = self.get_object()
+        old_status = instance.status
+
+        # Zaktualizuj zapotrzebowanie
+        updated_instance = serializer.save(
+            updated_by=self.request.user
+        )
+
+    @action(detail=True, methods=['patch'])
+    def change_status(self, request, pk=None):
+        """
+        Dedykowany endpoint do zmiany statusu
+        """
+        try:
+            requisition = self.get_object()
+            new_status = request.data.get('status')
+
+            if not new_status:
+                return Response(
+                    {'detail': 'Status jest wymagany'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            valid_statuses = [status_choice[0] for status_choice in Requisition.REQUISITION_STATUS_CHOICES]
+
+            if new_status not in valid_statuses:
+                return Response(
+                    {'detail': 'Nieprawidłowy status'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            requisition.status = new_status
+            requisition.updated_by = request.user
+            requisition.save()
+
+            serializer = self.get_serializer(requisition)
+            return Response(serializer.data)
+
+        except Exception as e:
+            return Response(
+                {'detail': f'Nie udało się zmienić statusu: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+def validate_hr_requisition(request):
+    """Walidacja zapotrzebowania HR przed zapisem"""
+    data = request.data
+
+    # Sprawdź, czy projekt istnieje
+    if not data.get('project'):
+        return Response({
+            'valid': False,
+            'message': 'Wybierz projekt'
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    # Sprawdź, czy podano termin realizacji
+    if not data.get('deadline'):
+        return Response({
+            'valid': False,
+            'message': 'Określ termin realizacji'
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    # Sprawdź, czy podano doświadczenie
+    if not data.get('experience'):
+        return Response({
+            'valid': False,
+            'message': 'Określ wymagane doświadczenie'
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    # Sprawdź, czy są stanowiska
+    if not data.get('positions') or len(data.get('positions', [])) == 0:
+        return Response({
+            'valid': False,
+            'message': 'Dodaj co najmniej jedno stanowisko'
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    # Sprawdź pozycje stanowiska
+    for position in data.get('positions', []):
+        if not position.get('position'):
+            return Response({
+                'valid': False,
+                'message': 'Wybierz stanowisko w każdej pozycji'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        if not position.get('quantity') or int(position.get('quantity', 0)) <= 0:
+            return Response({
+                'valid': False,
+                'message': 'Ilość pracowników musi być dodatnia'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+    return Response({
+        'valid': True,
+        'message': 'Dane zapotrzebowania HR są poprawne'
+    })

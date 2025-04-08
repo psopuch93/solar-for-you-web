@@ -13,7 +13,8 @@ from .views import (
     UserSettingsViewSet, BrigadeMemberViewSet, my_user_settings, available_employees,
     update_employee_project, create_user_settings, ProgressReportViewSet,
     ProgressReportEntryViewSet, ProgressReportImageViewSet, create_progress_report,
-    get_progress_reports_for_date
+    get_progress_reports_for_date,validate_hr_requisition,HRRequisitionViewSet,
+    HRRequisitionPositionViewSet
 )
 
 # Dodaj nową funkcję obsługującą CSRF
@@ -44,6 +45,8 @@ router.register(r'brigade-members', BrigadeMemberViewSet)
 router.register(r'progress-reports', ProgressReportViewSet)
 router.register(r'progress-report-entries', ProgressReportEntryViewSet)
 router.register(r'progress-report-images', ProgressReportImageViewSet)
+router.register(r'hr-requisitions', HRRequisitionViewSet)
+router.register(r'hr-requisition-positions', HRRequisitionPositionViewSet)
 
 urlpatterns = [
     # Bezpośrednie ścieżki muszą być zdefiniowane PRZED include(router.urls)
@@ -60,6 +63,7 @@ urlpatterns = [
     path('csrf/', get_csrf_token, name='get_csrf_token'),
     path('assign-employee-to-quarter/', assign_employee_to_quarter, name='assign_employee_to_quarter'),
     path('remove-employee-from-quarter/', remove_employee_from_quarter, name='remove_employee_from_quarter'),
+    path('validate-hr-requisition/', validate_hr_requisition, name='validate_hr_requisition'),
 
     # Dołącz ścieżki routera NA KOŃCU
     path('', include(router.urls)),
