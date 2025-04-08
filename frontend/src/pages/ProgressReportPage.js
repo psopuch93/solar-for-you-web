@@ -46,10 +46,10 @@ const ProgressReportPage = () => {
 
   // Efekt do ładowania raportu i zdjęć po zmianie daty
   useEffect(() => {
-    if (userProject && userProject.id) {
+    if (userProject && userProject.id && reportDate && brigadeMembers.length > 0) {
       fetchReportForDate();
     }
-  }, [reportDate, userProject]);
+  }, [reportDate, userProject, brigadeMembers]);
 
   // Efekt do ładowania zdjęć po załadowaniu raportu
   useEffect(() => {
@@ -62,123 +62,137 @@ const ProgressReportPage = () => {
 
   // Pobieranie wszystkich potrzebnych danych
   const fetchData = async () => {
-        setLoading(true);
-        try {
-            // Najpierw spróbuj pobrać istniejące ustawienia użytkownika
-            let userSettingsData = null;
-            try {
-                const csrfToken = getCsrfToken();
-                const userSettingsResponse = await fetch('/api/user-settings/me/', {
-                    method: 'GET',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRFToken': csrfToken,
-                    },
-                    credentials: 'same-origin',
-                });
+    setLoading(true);
+    try {
+      // Najpierw spróbuj pobrać istniejące ustawienia użytkownika
+      let userSettingsData = null;
+      try {
+        const csrfToken = getCsrfToken();
+        const userSettingsResponse = await fetch('/api/user-settings/me/', {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': csrfToken,
+          },
+          credentials: 'same-origin',
+        });
 
-                if (userSettingsResponse.ok) {
-                    userSettingsData = await userSettingsResponse.json();
-                    console.log("Pobrano istniejące ustawienia:", userSettingsData);
-                    setUserSettings(userSettingsData);
+        if (userSettingsResponse.ok) {
+          userSettingsData = await userSettingsResponse.json();
+          console.log("Pobrano istniejące ustawienia:", userSettingsData);
+          setUserSettings(userSettingsData);
 
-                    // Ustaw projekt użytkownika, jeśli istnieje
-                    if (userSettingsData.project) {
-                        let projectData;
-                        if (typeof userSettingsData.project === 'number') {
-                            const projectResponse = await fetch(`/api/projects/${userSettingsData.project}/`, {
-                                credentials: 'same-origin',
-                            });
+          // Ustaw projekt użytkownika, jeśli istnieje
+          if (userSettingsData.project) {
+            let projectData;
+            if (typeof userSettingsData.project === 'number') {
+              const projectResponse = await fetch(`/api/projects/${userSettingsData.project}/`, {
+                credentials: 'same-origin',
+              });
 
-                            if (projectResponse.ok) {
-                                projectData = await projectResponse.json();
-                            }
-                        } else if (userSettingsData.project_details) {
-                            projectData = userSettingsData.project_details;
-                        } else {
-                            projectData = userSettingsData.project;
-                        }
-
-                        setUserProject(projectData);
-                    }
-                } else {
-                    console.log("Nie znaleziono ustawień użytkownika:", userSettingsResponse.status);
-
-                    // Próba utworzenia nowych ustawień
-                    console.log("Próba utworzenia nowych ustawień użytkownika");
-                    const createResponse = await fetch('/api/user-settings/', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-CSRFToken': csrfToken,
-                        },
-                        credentials: 'same-origin',
-                    });
-
-                    if (createResponse.ok) {
-                        userSettingsData = await createResponse.json();
-                        console.log("Utworzono nowe ustawienia:", userSettingsData);
-                        setUserSettings(userSettingsData);
-
-                        if (userSettingsData.project) {
-                            if (typeof userSettingsData.project === 'number') {
-                                const projectResponse = await fetch(`/api/projects/${userSettingsData.project}/`, {
-                                    credentials: 'same-origin',
-                                });
-
-                                if (projectResponse.ok) {
-                                    const projectData = await projectResponse.json();
-                                    setUserProject(projectData);
-                                }
-                            } else if (userSettingsData.project_details) {
-                                setUserProject(userSettingsData.project_details);
-                            } else {
-                                setUserProject(userSettingsData.project);
-                            }
-                        }
-                    } else {
-                        const errorText = await createResponse.text();
-                        console.error("Nie udało się utworzyć ustawień:", createResponse.status, errorText);
-                    }
-                }
-            } catch (settingsError) {
-                console.error("Błąd przy obsłudze ustawień użytkownika:", settingsError);
+              if (projectResponse.ok) {
+                projectData = await projectResponse.json();
+              }
+            } else if (userSettingsData.project_details) {
+              projectData = userSettingsData.project_details;
+            } else {
+              projectData = userSettingsData.project;
             }
 
-            // Pobierz członków brygady niezależnie od wyniku pobrania ustawień
-            try {
-                const brigadeResponse = await fetch('/api/brigade-members/', {
-                    credentials: 'same-origin',
+            setUserProject(projectData);
+          }
+        } else {
+          console.log("Nie znaleziono ustawień użytkownika:", userSettingsResponse.status);
+
+          // Próba utworzenia nowych ustawień
+          console.log("Próba utworzenia nowych ustawień użytkownika");
+          const createResponse = await fetch('/api/user-settings/', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-CSRFToken': csrfToken,
+            },
+            credentials: 'same-origin',
+          });
+
+          if (createResponse.ok) {
+            userSettingsData = await createResponse.json();
+            console.log("Utworzono nowe ustawienia:", userSettingsData);
+            setUserSettings(userSettingsData);
+
+            if (userSettingsData.project) {
+              if (typeof userSettingsData.project === 'number') {
+                const projectResponse = await fetch(`/api/projects/${userSettingsData.project}/`, {
+                  credentials: 'same-origin',
                 });
 
-                if (brigadeResponse.ok) {
-                    const brigadeData = await brigadeResponse.json();
-                    setBrigadeMembers(brigadeData);
-
-                    // Inicjalizuj puste wpisy pracy dla każdego członka brygady
-                    const initialWorkEntries = brigadeData.map(member => ({
-                        employeeId: member.employee,
-                        employeeName: member.employee_name,
-                        hoursWorked: '',
-                        notes: ''
-                    }));
-
-                    setWorkEntries(initialWorkEntries);
-                } else {
-                    console.error("Błąd pobierania członków brygady:", brigadeResponse.status);
+                if (projectResponse.ok) {
+                  const projectData = await projectResponse.json();
+                  setUserProject(projectData);
                 }
-            } catch (err) {
-                console.error("Błąd pobierania brygady:", err);
+              } else if (userSettingsData.project_details) {
+                setUserProject(userSettingsData.project_details);
+              } else {
+                setUserProject(userSettingsData.project);
+              }
             }
-
-            setError(null);
-        } catch (err) {
-            console.error('Error fetching data:', err);
-            setError(err.message || 'Wystąpił błąd podczas ładowania danych');
-        } finally {
-            setLoading(false);
+          } else {
+            const errorText = await createResponse.text();
+            console.error("Nie udało się utworzyć ustawień:", createResponse.status, errorText);
+          }
         }
-    };
+      } catch (settingsError) {
+        console.error("Błąd przy obsłudze ustawień użytkownika:", settingsError);
+      }
+
+      // Pobierz członków brygady niezależnie od wyniku pobrania ustawień
+      try {
+        const brigadeResponse = await fetch('/api/brigade-members/', {
+          credentials: 'same-origin',
+        });
+
+        if (brigadeResponse.ok) {
+          const brigadeData = await brigadeResponse.json();
+          setBrigadeMembers(brigadeData);
+
+          if (reportData?.entries && reportData.entries.length > 0) {
+            // Mapowanie wpisów z raportu do formatu używanego w komponencie
+            const mappedEntries = brigadeData.map(member => {
+              const entry = reportData.entries.find(e => e.employee === member.employee);
+              return {
+                employeeId: member.employee,
+                employeeName: member.employee_name,
+                hoursWorked: entry ? entry.hours_worked.toString() : '',
+                notes: entry ? entry.notes || '' : ''
+              };
+            });
+
+            setWorkEntries(mappedEntries);
+          } else {
+            // Otherwise initialize empty entries
+            const initialWorkEntries = brigadeData.map(member => ({
+              employeeId: member.employee,
+              employeeName: member.employee_name,
+              hoursWorked: '',
+              notes: ''
+            }));
+            setWorkEntries(initialWorkEntries);
+          }
+        } else {
+          console.error("Błąd pobierania członków brygady:", brigadeResponse.status);
+        }
+      } catch (err) {
+        console.error("Błąd pobierania brygady:", err);
+      }
+
+      setError(null);
+    } catch (err) {
+      console.error('Error fetching data:', err);
+      setError(err.message || 'Wystąpił błąd podczas ładowania danych');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Pobierz raport dla wybranej daty
   const fetchReportForDate = async () => {
