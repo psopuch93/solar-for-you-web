@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
-from .models import UserProfile, Project, Client, ProjectTag, Empl_tag, Employee, Requisition, RequisitionItem, Item, Quarter, QuarterImage, UserSettings, BrigadeMember, ProgressReportEntry, ProgressReportImage, ProgressReport, HRRequisition, HRRequisitionPosition
+from .models import UserProfile, Project, Client, ProjectTag, Empl_tag, Employee, Requisition, RequisitionItem, Item, Quarter, QuarterImage, UserSettings, BrigadeMember, ProgressReportEntry, ProgressReportImage, ProgressReport, HRRequisition, HRRequisitionPosition, TransportRequest, TransportItem
 
 class UserSerializer(serializers.ModelSerializer):
     """Serializer dla modelu User"""
@@ -508,3 +508,78 @@ class HRRequisitionSerializer(serializers.ModelSerializer):
             'completed': 'Zrealizowano'
         }
         return status_map.get(obj.status, obj.status)
+
+class TransportItemSerializer(serializers.ModelSerializer):
+    """Serializer dla pozycji transportu"""
+
+    class Meta:
+        model = TransportItem
+        fields = ('id', 'description', 'length', 'width', 'height', 'weight', 'value')
+
+
+class TransportRequestSerializer(serializers.ModelSerializer):
+    """Serializer dla zapotrzebowania na transport"""
+    items = TransportItemSerializer(many=True, read_only=True)
+    created_by_name = serializers.SerializerMethodField()
+    updated_by_name = serializers.SerializerMethodField()
+    pickup_project_name = serializers.SerializerMethodField()
+    delivery_project_name = serializers.SerializerMethodField()
+    cost_project_name = serializers.SerializerMethodField()
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    loading_method_display = serializers.CharField(source='get_loading_method_display', read_only=True)
+
+    class Meta:
+        model = TransportRequest
+        fields = (
+            'id', 'number', 'pickup_project', 'pickup_project_name', 'pickup_address',
+            'pickup_date', 'delivery_project', 'delivery_project_name', 'delivery_address',
+            'delivery_date', 'loading_method', 'loading_method_display', 'cost_project',
+            'cost_project_name', 'requester_phone', 'notes', 'status', 'status_display',
+            'created_at', 'updated_at', 'created_by', 'created_by_name',
+            'updated_by', 'updated_by_name', 'items'
+        )
+        read_only_fields = ('id', 'number', 'created_at', 'updated_at', 'created_by', 'updated_by')
+
+    def get_created_by_name(self, obj):
+        """Zwraca imię i nazwisko osoby, która utworzyła zapotrzebowanie"""
+        if obj.created_by:
+            return f"{obj.created_by.first_name} {obj.created_by.last_name}".strip() or obj.created_by.username
+        return None
+
+    def get_updated_by_name(self, obj):
+        """Zwraca imię i nazwisko osoby, która ostatnio zaktualizowała zapotrzebowanie"""
+        if obj.updated_by:
+            return f"{obj.updated_by.first_name} {obj.updated_by.last_name}".strip() or obj.updated_by.username
+        return None
+
+    def get_pickup_project_name(self, obj):
+        """Zwraca nazwę projektu załadunku, jeśli istnieje"""
+        return obj.pickup_project.name if obj.pickup_project else None
+
+    def get_delivery_project_name(self, obj):
+        """Zwraca nazwę projektu rozładunku, jeśli istnieje"""
+        return obj.delivery_project.name if obj.delivery_project else None
+
+    def get_cost_project_name(self, obj):
+        """Zwraca nazwę projektu kosztowego, jeśli istnieje"""
+        return obj.cost_project.name if obj.cost_project else None
+
+    def create(self, validated_data):
+        """Metoda do utworzenia nowego zapotrzebowania transportowego wraz z przesyłkami"""
+        items_data = self.context.get('items', [])
+
+        # Pobierz zalogowanego użytkownika z kontekstu
+        user = self.context['request'].user
+
+        # Utwórz zapotrzebowanie transportowe
+        transport_request = TransportRequest.objects.create(
+            **validated_data,
+            created_by=user,
+            updated_by=user
+        )
+
+        # Utwórz powiązane przesyłki
+        for item_data in items_data:
+            TransportItem.objects.create(transport=transport_request, **item_data)
+
+        return transport_request

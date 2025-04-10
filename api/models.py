@@ -567,3 +567,182 @@ class HRRequisitionPosition(models.Model):
     class Meta:
         verbose_name = "Pozycja zapotrzebowania HR"
         verbose_name_plural = "Pozycje zapotrzebowań HR"
+
+class TransportRequest(models.Model):
+    """Model zapotrzebowania na transport"""
+    LOADING_METHOD_CHOICES = [
+        ('external', 'Firma zewnętrzna'),
+        ('internal', 'Nasz wewnętrzny'),
+    ]
+
+    STATUS_CHOICES = [
+        ('new', 'Nowy'),
+        ('accepted', 'Zaakceptowany'),
+        ('in_progress', 'W realizacji'),
+        ('completed', 'Zrealizowany'),
+        ('cancelled', 'Anulowany')
+    ]
+
+    # Miejsca załadunku i rozładunku
+    pickup_project = models.ForeignKey(
+        Project,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='pickup_transports',
+        verbose_name="Projekt załadunku"
+    )
+    pickup_address = models.TextField(null=True, blank=True, verbose_name="Adres załadunku")
+    pickup_date = models.DateField(verbose_name="Data załadunku")
+
+    delivery_project = models.ForeignKey(
+        Project,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='delivery_transports',
+        verbose_name="Projekt rozładunku"
+    )
+    delivery_address = models.TextField(null=True, blank=True, verbose_name="Adres rozładunku")
+    delivery_date = models.DateField(verbose_name="Data rozładunku")
+
+    # Sposób transportu
+    loading_method = models.CharField(
+        max_length=20,
+        choices=LOADING_METHOD_CHOICES,
+        default='external',
+        verbose_name="Sposób załadunku i rozładunku"
+    )
+
+    # Projekt kosztowy
+    cost_project = models.ForeignKey(
+        Project,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='cost_transports',
+        verbose_name="Projekt kosztowy"
+    )
+
+    # Informacje kontaktowe
+    requester_phone = models.CharField(
+        max_length=20,
+        blank=True,
+        null=True,
+        verbose_name="Numer telefonu zamawiającego"
+    )
+    notes = models.TextField(blank=True, null=True, verbose_name="Uwagi")
+
+    # Status i dane utworzenia
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default='new',
+        verbose_name="Status"
+    )
+    number = models.CharField(max_length=50, unique=True, verbose_name="Numer transportu")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Data utworzenia")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Data aktualizacji")
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='created_transports',
+        verbose_name="Utworzony przez"
+    )
+    updated_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='updated_transports',
+        verbose_name="Zaktualizowany przez"
+    )
+
+    def save(self, *args, **kwargs):
+        # Generowanie numeru transportu przy pierwszym zapisie
+        if not self.number:
+            today = datetime.date.today()
+
+            # Format numeru: TR/YYYY/MM/DD/XXX
+            prefix = f"TR/{today.year}/{today.month:02d}/{today.day:02d}/"
+
+            # Znajdź transporty z tym samym prefiksem (z tego samego dnia)
+            today_transports = TransportRequest.objects.filter(
+                number__startswith=prefix
+            )
+
+            # Znajdź najwyższy numer z tego dnia
+            max_number = 0
+            for transport in today_transports:
+                try:
+                    current_number = int(transport.number.split('/')[-1])
+                    if current_number > max_number:
+                        max_number = current_number
+                except (ValueError, IndexError):
+                    pass
+
+            # Ustaw nowy numer jako najwyższy + 1
+            self.number = f"{prefix}{max_number + 1:03d}"
+
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.number} - {self.pickup_date}"
+
+    class Meta:
+        verbose_name = "Zapotrzebowanie na transport"
+        verbose_name_plural = "Zapotrzebowania na transport"
+        ordering = ['-created_at']
+
+
+class TransportItem(models.Model):
+    """Model reprezentujący pojedynczą przesyłkę w transporcie"""
+    transport = models.ForeignKey(
+        TransportRequest,
+        on_delete=models.CASCADE,
+        related_name='items',
+        verbose_name="Transport"
+    )
+
+    description = models.CharField(max_length=255, verbose_name="Opis")
+    length = models.DecimalField(
+        max_digits=8,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Długość (cm)"
+    )
+    width = models.DecimalField(
+        max_digits=8,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Szerokość (cm)"
+    )
+    height = models.DecimalField(
+        max_digits=8,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Wysokość (cm)"
+    )
+    weight = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Waga (kg)"
+    )
+    value = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Wartość (PLN)"
+    )
+
+    def __str__(self):
+        return f"{self.description} ({self.transport.number})"
+
+    class Meta:
+        verbose_name = "Przesyłka"
+        verbose_name_plural = "Przesyłki"

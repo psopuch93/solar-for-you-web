@@ -12,14 +12,14 @@ from django.db.models import Q
 from django.utils.decorators import method_decorator
 import datetime
 import json
-from .models import UserProfile, Project, Client, ProjectTag, Employee, Empl_tag, Requisition, Item, RequisitionItem, Quarter, QuarterImage, UserSettings, BrigadeMember,HRRequisitionPosition, HRRequisition
+from .models import UserProfile, Project, Client, ProjectTag, Employee, Empl_tag, Requisition, Item, RequisitionItem, Quarter, QuarterImage, UserSettings, BrigadeMember,HRRequisitionPosition, HRRequisition, TransportRequest, TransportItem
 from .serializers import (
     UserSerializer, UserProfileSerializer, ProjectSerializer,
     ClientSerializer, ProjectTagSerializer, EmployeeSerializer, EmplTagSerializer,
     ItemSerializer, RequisitionSerializer, RequisitionItemSerializer, QuarterSerializer, QuarterImageSerializer,
     UserSettingsSerializer, BrigadeMemberSerializer, ProgressReportSerializer,
     ProgressReport, ProgressReportEntrySerializer, ProgressReportEntry, ProgressReportImageSerializer,
-    ProgressReportImage, HRRequisitionPositionSerializer, HRRequisitionSerializer
+    ProgressReportImage, HRRequisitionPositionSerializer, HRRequisitionSerializer, TransportRequestSerializer, TransportItemSerializer
 )
 
 class IsAdminOrOwner(permissions.BasePermission):
@@ -1332,3 +1332,122 @@ def validate_hr_requisition(request):
         'valid': True,
         'message': 'Dane zapotrzebowania HR są poprawne'
     })
+
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def get_employee_by_tag(request, tag_id):
+    """Endpoint zwracający pracownika po ID tagu NFC"""
+    try:
+        # Znajdź tag pracownika o podanym numerze seryjnym
+        employee_tag = Empl_tag.objects.filter(serial=tag_id).first()
+
+        if not employee_tag:
+            return Response(
+                {'detail': 'Nie znaleziono tagu o podanym ID'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Znajdź pracownika powiązanego z tym tagiem
+        employee = Employee.objects.filter(employee_tag=employee_tag).first()
+
+        if not employee:
+            return Response(
+                {'detail': 'Nie znaleziono pracownika z tym tagiem'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Serializuj i zwróć dane pracownika
+        serializer = EmployeeSerializer(employee)
+        return Response(serializer.data)
+
+    except Exception as e:
+        return Response(
+            {'detail': f'Wystąpił błąd: {str(e)}'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+@method_decorator(ensure_csrf_cookie, name='dispatch')
+class TransportRequestViewSet(viewsets.ModelViewSet):
+    """API endpoint dla zapotrzebowań na transport"""
+    queryset = TransportRequest.objects.all()
+    serializer_class = TransportRequestSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        """Filtruje zapotrzebowania na transport w zależności od uprawnień użytkownika"""
+        user = self.request.user
+
+        # Adminom pokazujemy wszystkie zapotrzebowania
+        if user.is_staff or hasattr(user, 'profile') and user.profile.has_privilege('view_all_transports'):
+            return TransportRequest.objects.all().order_by('-created_at')
+
+        # Pozostali użytkownicy widzą tylko swoje zapotrzebowania
+        return TransportRequest.objects.filter(created_by=user).order_by('-created_at')
+
+    def create(self, request, *args, **kwargs):
+        """Utworzenie nowego zapotrzebowania transportowego wraz z przesyłkami"""
+        # Ekstrakcja danych przesyłek z żądania
+        items_data = request.data.pop('items', [])
+
+        # Serializacja danych zapotrzebowania
+        serializer = self.get_serializer(
+            data=request.data,
+            context={'request': request, 'items': items_data}
+        )
+
+        # Walidacja danych
+        serializer.is_valid(raise_exception=True)
+
+        # Tworzenie zapotrzebowania i przesyłek
+        self.perform_create(serializer)
+
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    def perform_create(self, serializer):
+        """Zapisuje zapotrzebowanie i inicjuje wysyłkę powiadomienia"""
+        serializer.save(created_by=self.request.user, updated_by=self.request.user)
+
+    def perform_update(self, serializer):
+        """Aktualizuje zapotrzebowanie i inicjuje wysyłkę powiadomienia o zmianie"""
+        serializer.save(updated_by=self.request.user)
+
+    @action(detail=True, methods=['post'])
+    def change_status(self, request, pk=None):
+        """Dedykowany endpoint do zmiany statusu zapotrzebowania"""
+        transport = self.get_object()
+        new_status = request.data.get('status')
+
+        if not new_status:
+            return Response(
+                {'detail': 'Status jest wymagany'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Sprawdź czy nowy status jest dopuszczalny
+        valid_statuses = [status[0] for status in TransportRequest.STATUS_CHOICES]
+
+        if new_status not in valid_statuses:
+            return Response(
+                {'detail': 'Nieprawidłowy status'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        transport.status = new_status
+        transport.updated_by = request.user
+        transport.save()
+
+        serializer = self.get_serializer(transport)
+        return Response(serializer.data)
+
+class TransportItemViewSet(viewsets.ModelViewSet):
+    """API endpoint dla przesyłek w transporcie"""
+    queryset = TransportItem.objects.all()
+    serializer_class = TransportItemSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        """Filtruje przesyłki po powiązanym transporcie"""
+        transport_id = self.request.query_params.get('transport_id')
+        if transport_id:
+            return TransportItem.objects.filter(transport_id=transport_id)
+        return TransportItem.objects.all()
