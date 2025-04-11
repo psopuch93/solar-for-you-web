@@ -1,6 +1,7 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from django.views.decorators.csrf import ensure_csrf_cookie
+from django.middleware.csrf import get_token
 from django.http import JsonResponse
 from django.conf import settings
 from django.conf.urls.static import static
@@ -14,7 +15,8 @@ from .views import (
     update_employee_project, create_user_settings, ProgressReportViewSet,
     ProgressReportEntryViewSet, ProgressReportImageViewSet, create_progress_report,
     get_progress_reports_for_date,validate_hr_requisition,HRRequisitionViewSet,
-    HRRequisitionPositionViewSet
+    HRRequisitionPositionViewSet, TransportRequestViewSet, TransportItemViewSet,
+    validate_transport
 )
 
 # Dodaj nową funkcję obsługującą CSRF
@@ -24,7 +26,8 @@ def get_csrf_token(request):
     Funkcja pomocnicza, która zwraca pusty JsonResponse,
     ale ustawia cookie CSRF w odpowiedzi poprzez dekorator ensure_csrf_cookie
     """
-    return JsonResponse({'detail': 'CSRF cookie set'})
+    csrf_token = get_token(request)
+    return JsonResponse({'csrfToken': csrf_token})
 
 # Utwórz router dla widoków ViewSet
 router = DefaultRouter()
@@ -47,6 +50,8 @@ router.register(r'progress-report-entries', ProgressReportEntryViewSet)
 router.register(r'progress-report-images', ProgressReportImageViewSet)
 router.register(r'hr-requisitions', HRRequisitionViewSet)
 router.register(r'hr-requisition-positions', HRRequisitionPositionViewSet)
+router.register(r'transport-requests', TransportRequestViewSet)
+router.register(r'transport-items', TransportItemViewSet)
 
 urlpatterns = [
     # Bezpośrednie ścieżki muszą być zdefiniowane PRZED include(router.urls)
@@ -64,6 +69,7 @@ urlpatterns = [
     path('assign-employee-to-quarter/', assign_employee_to_quarter, name='assign_employee_to_quarter'),
     path('remove-employee-from-quarter/', remove_employee_from_quarter, name='remove_employee_from_quarter'),
     path('validate-hr-requisition/', validate_hr_requisition, name='validate_hr_requisition'),
+    path('validate-transport/', validate_transport, name='validate_transport'),
 
     # Dołącz ścieżki routera NA KOŃCU
     path('', include(router.urls)),

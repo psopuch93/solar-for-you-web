@@ -1,30 +1,77 @@
 // frontend/src/pages/RequisitionsPage.js
-import React, { useState, useEffect } from 'react';
+import React, { useState, useRef, memo, useEffect, useMemo } from 'react';
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import {
+  PlusCircle,
+  Search,
+  ArrowUpDown,
+  AlertCircle,
+  Clock,
+  CheckCircle,
+  XCircle,
+  Loader,
+  Eye,
+  Check,
   Server,
   Users,
-  ChevronRight,
-  Eye,
-  AlertCircle
+  Truck,
+  ChevronRight
 } from 'lucide-react';
 import MaterialRequisitionsPage from './MaterialRequisitionsPage';
 import HRRequisitionsPage from './HRRequisitionsPage';
+import TransportRequestsPage from './TransportRequestsPage';
 import { useRequisitions } from '../contexts/RequisitionContext';
+import { useDialog } from '../contexts/DialogContext';
 
-const RequisitionsPage = () => {
-  const navigate = useNavigate();
-  const location = useLocation();
-  const { requisitions, loading, error, refreshRequisitions, forceRefresh } = useRequisitions();
+const RequisitionsPage = memo(() => {
+  const {
+    requisitions,
+    loading,
+    error,
+    forceRefresh,
+    updateSingleRequisition
+  } = useRequisitions();
+
+  const { showInfo, confirm } = useDialog();
+
+  const [searchTerm, setSearchTerm] = useState('');
+  const [sortField, setSortField] = useState('created_at');
+  const [sortDirection, setSortDirection] = useState('desc');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [localStatuses, setLocalStatuses] = useState({});
   const [isInitialized, setIsInitialized] = useState(false);
+  const [expandedRequisition, setExpandedRequisition] = useState(null);
+  const [requisitionDetails, setRequisitionDetails] = useState({});
+  const [statusUpdating, setStatusUpdating] = useState({});
 
-  // Force refresh when component mounts to ensure we have the latest data
+  const mountedRef = useRef(true);
+  const navigate = useNavigate();
+
+  // Force refresh on component mount
   useEffect(() => {
-    console.log("RequisitionsPage: Component mounted, forcing refresh...");
-    forceRefresh(); // Use forceRefresh instead of refreshRequisitions for immediate data fetch
-    setIsInitialized(true);
-  }, [forceRefresh]);
+    if (!isInitialized) {
+      forceRefresh();
+      setIsInitialized(true);
+    }
+  }, [forceRefresh, isInitialized]);
 
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  // Watch for changes in requisitions to update local statuses
+  useEffect(() => {
+    const newLocalStatuses = {};
+    requisitions.forEach(req => {
+      newLocalStatuses[req.id] = req.status;
+    });
+    setLocalStatuses(newLocalStatuses);
+  }, [requisitions]);
+
+  // Typy zapotrzebowań
   const types = [
     {
       id: 'material',
@@ -41,6 +88,15 @@ const RequisitionsPage = () => {
       icon: Users,
       color: 'bg-green-500',
       path: '/dashboard/requests/hr'
+    },
+    // Nowy typ zapotrzebowania - transport
+    {
+      id: 'transport',
+      name: 'Transport',
+      description: 'Zapotrzebowania na transport zasobów i przesyłek',
+      icon: Truck,
+      color: 'bg-orange-500',
+      path: '/dashboard/requests/transport'
     }
   ];
 
@@ -71,7 +127,7 @@ const RequisitionsPage = () => {
       )}
 
       {/* Display requisition type selection cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {types.map((type) => (
           <div
             key={type.id}
@@ -119,8 +175,9 @@ const RequisitionsPage = () => {
       <Route path="/" element={<MainView />} />
       <Route path="/material/*" element={<MaterialRequisitionsPage />} />
       <Route path="/hr/*" element={<HRRequisitionsPage />} />
+      <Route path="/transport/*" element={<TransportRequestsPage />} />
     </Routes>
   );
-};
+});
 
 export default RequisitionsPage;

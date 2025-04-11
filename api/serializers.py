@@ -568,15 +568,8 @@ class TransportRequestSerializer(serializers.ModelSerializer):
         """Metoda do utworzenia nowego zapotrzebowania transportowego wraz z przesyłkami"""
         items_data = self.context.get('items', [])
 
-        # Pobierz zalogowanego użytkownika z kontekstu
-        user = self.context['request'].user
-
         # Utwórz zapotrzebowanie transportowe
-        transport_request = TransportRequest.objects.create(
-            **validated_data,
-            created_by=user,
-            updated_by=user
-        )
+        transport_request = TransportRequest.objects.create(**validated_data)
 
         # Utwórz powiązane przesyłki
         for item_data in items_data:

@@ -1404,11 +1404,12 @@ class TransportRequestViewSet(viewsets.ModelViewSet):
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     def perform_create(self, serializer):
-        """Zapisuje zapotrzebowanie i inicjuje wysyłkę powiadomienia"""
-        serializer.save(created_by=self.request.user, updated_by=self.request.user)
+        serializer.save(
+            created_by=self.request.user,
+            updated_by=self.request.user
+        )
 
     def perform_update(self, serializer):
-        """Aktualizuje zapotrzebowanie i inicjuje wysyłkę powiadomienia o zmianie"""
         serializer.save(updated_by=self.request.user)
 
     @action(detail=True, methods=['post'])
@@ -1451,3 +1452,39 @@ class TransportItemViewSet(viewsets.ModelViewSet):
         if transport_id:
             return TransportItem.objects.filter(transport_id=transport_id)
         return TransportItem.objects.all()
+
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+def validate_transport(request):
+    """Walidacja formularza transportu przed zapisaniem"""
+    data = request.data
+
+    # Sprawdź podstawowe dane
+    errors = {}
+
+    # Sprawdź dane załadunku
+    if not data.get('loading_project') and not data.get('loading_other_address'):
+        errors['loading'] = 'Musisz podać projekt lub inny adres załadunku'
+
+    if not data.get('loading_date'):
+        errors['loading_date'] = 'Data załadunku jest wymagana'
+
+    # Sprawdź dane rozładunku
+    if not data.get('unloading_project') and not data.get('unloading_other_address'):
+        errors['unloading'] = 'Musisz podać projekt lub inny adres rozładunku'
+
+    if not data.get('unloading_date'):
+        errors['unloading_date'] = 'Data rozładunku jest wymagana'
+
+    # Sprawdź projekt kosztowy
+    if not data.get('cost_project'):
+        errors['cost_project'] = 'Projekt kosztowy jest wymagany'
+
+    # Sprawdź czy są przedmioty w transporcie
+    if not data.get('items') or len(data.get('items', [])) == 0:
+        errors['items'] = 'Dodaj co najmniej jeden przedmiot do transportu'
+
+    if errors:
+        return Response({'valid': False, 'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    return Response({'valid': True}, status=status.HTTP_200_OK)
