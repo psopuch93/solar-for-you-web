@@ -14,7 +14,11 @@ import {
   Image as ImageIcon,
   X,
   UploadCloud,
-  CheckCircle
+  CheckCircle,
+  PlusCircle,
+  Info,
+  FileText,
+  Edit
 } from 'lucide-react';
 import { getCsrfToken } from '../utils/csrfToken';
 import ProgressReportBarChart from '../components/ProgressReportBarChart';
@@ -38,11 +42,20 @@ const ProgressReportPage = () => {
   const [showImageModal, setShowImageModal] = useState(false);
   const fileInputRef = useRef(null);
 
+  // Nowe stany dla obsługi wersji roboczych
+  const [reportStatus, setReportStatus] = useState(null); // null, 'draft', 'submitted'
+  const [isEditingDraft, setIsEditingDraft] = useState(false);
+  const [reportDates, setReportDates] = useState({
+    draft: [],
+    submitted: []
+  });
+
   const navigate = useNavigate();
 
   // Pobierz dane przy pierwszym renderowaniu
   useEffect(() => {
     fetchData();
+    fetchReportDates(); // Pobierz daty wszystkich raportów dla oznaczenia w kalendarzu
   }, []);
 
   // Efekt do ładowania raportu i zdjęć po zmianie daty
@@ -195,12 +208,52 @@ const ProgressReportPage = () => {
     }
   };
 
+  // Nowa funkcja: pobierz daty wszystkich raportów dla kalendarza
+  const fetchReportDates = async () => {
+    try {
+      const response = await fetch('/api/progress-reports/', {
+        credentials: 'same-origin',
+      });
+
+      if (!response.ok) {
+        throw new Error('Error fetching reports');
+      }
+
+      const data = await response.json();
+
+      // Rozdziel raporty na wersje robocze i finalne
+      const draftDates = data
+        .filter(report => report.is_draft)
+        .map(report => report.date);
+
+      const submittedDates = data
+        .filter(report => report.is_draft === false)
+        .map(report => report.date);
+
+      setReportDates({
+        draft: draftDates,
+        submitted: submittedDates
+      });
+
+    } catch (err) {
+      console.error('Error fetching report dates:', err);
+      // Nie pokazujemy błędu użytkownikowi - to nie jest krytyczne
+    }
+  };
+
+  // Nowa funkcja: Obsługa edycji istniejącej wersji roboczej
+  const handleEditDraft = () => {
+    if (reportData && reportStatus === 'draft') {
+      setIsEditingDraft(true);
+    }
+  };
+
   // Pobierz raport dla wybranej daty
   const fetchReportForDate = async () => {
     if (!userProject || !userProject.id || !reportDate) return;
 
     try {
-      const response = await fetch(`/api/progress-reports-for-date/?date=${reportDate}`, {
+      const response = await fetch(`/api/progress-reports/?date=${reportDate}`, {
         credentials: 'same-origin',
       });
 
@@ -210,10 +263,16 @@ const ProgressReportPage = () => {
 
       const data = await response.json();
 
+      // Filtruj raporty tylko dla wybranej daty
+      const reportsForDate = data.filter(report => report.date === reportDate);
+
       // Ustaw dane raportu jeśli istnieje, lub null jeśli nie ma raportu na tę datę
-      if (data && data.length > 0) {
-        const report = data[0]; // Zakładamy, że dla danej daty jest tylko jeden raport
+      if (reportsForDate && reportsForDate.length > 0) {
+        const report = reportsForDate[0]; // Zakładamy, że dla danej daty jest tylko jeden raport
         setReportData(report);
+
+        // Określ status raportu (wersja robocza czy finalna)
+        setReportStatus(report.is_draft ? 'draft' : 'submitted');
 
         // Jeśli raport ma wpisy, załaduj je do stanu
         if (report.entries && report.entries.length > 0) {
@@ -232,10 +291,22 @@ const ProgressReportPage = () => {
         }
       } else {
         setReportData(null);
+        setReportStatus(null);
+        setIsEditingDraft(false);
+
+        // Inicjalizuj puste wpisy
+        const initialWorkEntries = brigadeMembers.map(member => ({
+          employeeId: member.employee,
+          employeeName: member.employee_name,
+          hoursWorked: '',
+          notes: ''
+        }));
+        setWorkEntries(initialWorkEntries);
       }
     } catch (err) {
       console.error('Error fetching report:', err);
       setReportData(null);
+      setReportStatus(null);
     }
   };
 
@@ -299,7 +370,7 @@ const ProgressReportPage = () => {
     if (!reportData || !reportData.id) {
       // Jeśli nie ma raportu, najpierw utworzymy raport
       try {
-        await handleSubmit(null, true); // true oznacza, że wywołujemy tylko w celu utworzenia raportu
+        await saveAsDraft(); // Zapisz jako wersję roboczą przed dodaniem zdjęcia
 
         // Po utworzeniu raportu czekamy chwilę, aby upewnić się, że mamy już ID raportu
         setTimeout(() => {
@@ -385,10 +456,18 @@ const ProgressReportPage = () => {
     setShowImageModal(true);
   };
 
-  // Wysyłanie raportu
-  const handleSubmit = async (e, skipValidation = false) => {
-    if (e) e.preventDefault();
+  // Nowa funkcja: Zapisz jako wersję roboczą
+  const saveAsDraft = async () => {
+    await saveReport(true);
+  };
 
+  // Nowa funkcja: Zapisz jako wersję finalną (dotychczasowy handleSubmit)
+  const submitFinalReport = async () => {
+    await saveReport(false);
+  };
+
+  // Nowa funkcja: Wspólna logika zapisu raportu
+  const saveReport = async (isDraft) => {
     // Sprawdź czy użytkownik ma przypisany projekt
     if (!userProject) {
       setError("Nie możesz złożyć raportu bez przypisanego projektu. Przejdź do sekcji 'Brygada' aby przypisać projekt.");
@@ -401,8 +480,8 @@ const ProgressReportPage = () => {
       return;
     }
 
-    // Walidacja danych - tylko jeśli nie pomijamy walidacji
-    if (!skipValidation) {
+    // Walidacja danych - tylko dla finalnego raportu
+    if (!isDraft) {
       const invalidEntries = workEntries.filter(
         entry => entry.hoursWorked !== '' && (isNaN(parseFloat(entry.hoursWorked)) || parseFloat(entry.hoursWorked) < 0 || parseFloat(entry.hoursWorked) > 24)
       );
@@ -411,15 +490,24 @@ const ProgressReportPage = () => {
         setError("Liczba godzin musi być wartością od 0 do 24 dla wszystkich pracowników.");
         return;
       }
+
+      // Sprawdź czy wszystkie godziny są uzupełnione przy finalnym raporcie
+      const emptyHoursEntries = workEntries.filter(entry => entry.hoursWorked === '');
+      if (emptyHoursEntries.length > 0) {
+        if (!window.confirm('Niektórzy pracownicy nie mają uzupełnionych godzin pracy. Czy na pewno chcesz zapisać raport jako finalny?')) {
+          return;
+        }
+      }
     }
 
     try {
       setSubmitting(true);
 
       // Przygotuj dane do wysłania
-      const reportData = {
+      const reportDataToSend = {
         date: reportDate,
         project: userProject.id,
+        is_draft: isDraft, // Dodajemy flagę wersji roboczej
         entries: workEntries.map(entry => ({
           employee: entry.employeeId,
           hours_worked: entry.hoursWorked === '' ? 0 : parseFloat(entry.hoursWorked),
@@ -427,28 +515,40 @@ const ProgressReportPage = () => {
         }))
       };
 
+      // Określ URL i metodę w zależności od tego, czy edytujemy istniejący raport
+      let url = '/api/create-progress-report/';
+      let method = 'POST';
+
+      if (isEditingDraft && reportData && reportData.id) {
+        url = `/api/progress-reports/${reportData.id}/`;
+        method = 'PATCH';
+      }
+
       // Wyślij dane do API
-      const response = await fetch('/api/create-progress-report/', {
-        method: 'POST',
+      const response = await fetch(url, {
+        method: method,
         headers: {
           'Content-Type': 'application/json',
           'X-CSRFToken': getCsrfToken(),
         },
-        body: JSON.stringify(reportData),
+        body: JSON.stringify(reportDataToSend),
         credentials: 'same-origin',
       });
 
       if (!response.ok) {
-        throw new Error('Nie udało się zapisać raportu');
+        throw new Error(isDraft ? 'Nie udało się zapisać wersji roboczej' : 'Nie udało się zapisać raportu');
       }
 
       const savedReport = await response.json();
       setReportData(savedReport);
+      setReportStatus(isDraft ? 'draft' : 'submitted');
+      setIsEditingDraft(false);
 
-      // Pokaż powiadomienie o sukcesie, ale tylko jeśli nie pomijamy walidacji
-      if (!skipValidation) {
-        showNotification("Raport został zapisany", "success");
-      }
+      // Pokaż odpowiednie powiadomienie
+      showNotification(isDraft ? "Wersja robocza została zapisana" : "Raport został pomyślnie zapisany", "success");
+
+      // Odśwież daty raportów
+      fetchReportDates();
 
       // Załaduj zdjęcia dla nowego raportu
       if (savedReport && savedReport.id) {
@@ -457,11 +557,16 @@ const ProgressReportPage = () => {
 
     } catch (err) {
       console.error('Error submitting report:', err);
-      setError(err.message || 'Wystąpił błąd podczas zapisywania raportu');
-      throw err; // Re-throw, aby wywołujący mógł obsłużyć błąd
+      setError(err.message || (isDraft ? 'Wystąpił błąd podczas zapisywania wersji roboczej' : 'Wystąpił błąd podczas zapisywania raportu'));
     } finally {
       setSubmitting(false);
     }
+  };
+
+  // Oryginalna funkcja handleSubmit - modyfikujemy, aby wywołać saveReport
+  const handleSubmit = async (e) => {
+    if (e) e.preventDefault();
+    await submitFinalReport();
   };
 
   // Funkcja do wyświetlania powiadomień
@@ -470,18 +575,45 @@ const ProgressReportPage = () => {
     setTimeout(() => setNotification(null), 3000);
   };
 
+  // Funkcja do stylizacji dat w kalendarzu
+  const getDateStyle = (date) => {
+    const formattedDate = date instanceof Date
+      ? date.toISOString().split('T')[0]
+      : date;
+
+    if (reportDates.submitted.includes(formattedDate)) {
+      return 'bg-green-200';
+    } else if (reportDates.draft.includes(formattedDate)) {
+      return 'bg-orange-200';
+    }
+    return '';
+  };
+
+  // Czy formularz powinien być zablokowany
+  const isFormDisabled = reportStatus === 'submitted' || (reportStatus === 'draft' && !isEditingDraft);
+
   return (
     <div>
       <div className="flex justify-between items-center mb-8">
         <h1 className="text-3xl font-bold text-gray-800">Progres Raport</h1>
-        <button
-          onClick={fetchData}
-          className="flex items-center px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
-          disabled={loading}
-        >
-          <RefreshCw className={`mr-2 ${loading ? 'animate-spin' : ''}`} size={18} />
-          Odśwież dane
-        </button>
+        <div className="flex space-x-4 items-center">
+          <div className="flex items-center mr-4">
+            <div className="w-3 h-3 bg-orange-200 rounded-full mr-1"></div>
+            <span className="text-sm text-gray-600">Wersja robocza</span>
+          </div>
+          <div className="flex items-center">
+            <div className="w-3 h-3 bg-green-200 rounded-full mr-1"></div>
+            <span className="text-sm text-gray-600">Raport finalny</span>
+          </div>
+          <button
+            onClick={fetchData}
+            className="flex items-center px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+            disabled={loading}
+          >
+            <RefreshCw className={`mr-2 ${loading ? 'animate-spin' : ''}`} size={18} />
+            Odśwież dane
+          </button>
+        </div>
       </div>
 
       {/* Powiadomienia */}
@@ -507,6 +639,39 @@ const ProgressReportPage = () => {
           <div className="flex items-center">
             <AlertCircle className="mr-2" size={20} />
             <p>{error}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Informacja o istniejącym raporcie */}
+      {reportStatus && (
+        <div className={`p-4 rounded-md mb-6 ${
+          reportStatus === 'draft' ? 'bg-orange-50 border-l-4 border-orange-500' : 'bg-green-50 border-l-4 border-green-500'
+        }`}>
+          <div className="flex items-start">
+            <Info className={`${reportStatus === 'draft' ? 'text-orange-500' : 'text-green-500'} mt-0.5 mr-2`} size={20} />
+            <div>
+              <p className={`${reportStatus === 'draft' ? 'text-orange-700' : 'text-green-700'} font-medium`}>
+                {reportStatus === 'draft'
+                  ? 'Dla tej daty istnieje wersja robocza raportu'
+                  : 'Dla tej daty istnieje już finalny raport'}
+              </p>
+              <p className="text-sm mt-1">
+                {reportStatus === 'draft'
+                  ? 'Możesz kontynuować edycję wersji roboczej lub wybrać inną datę.'
+                  : 'Zapisane raporty nie mogą być edytowane. Wybierz inną datę, aby utworzyć nowy raport.'}
+              </p>
+
+              {reportStatus === 'draft' && !isEditingDraft && (
+                <button
+                  onClick={handleEditDraft}
+                  className="mt-2 flex items-center text-orange-600 hover:text-orange-700"
+                >
+                  <Edit size={16} className="mr-1" />
+                  Edytuj wersję roboczą
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -611,6 +776,7 @@ const ProgressReportPage = () => {
                               onChange={(e) => handleHoursChange(entry.employeeId, e.target.value)}
                               className="pl-9 pr-4 py-2 w-full border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                               placeholder="0"
+                              disabled={isFormDisabled}
                             />
                             <Clock className="absolute left-3 top-2.5 text-gray-400" size={18} />
                           </div>
@@ -625,6 +791,7 @@ const ProgressReportPage = () => {
                             onChange={(e) => handleNotesChange(entry.employeeId, e.target.value)}
                             className="px-4 py-2 w-full border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                             placeholder="Dodatkowe informacje"
+                            disabled={isFormDisabled}
                           />
                         </div>
                       </div>
@@ -634,19 +801,38 @@ const ProgressReportPage = () => {
               </div>
             </div>
 
-            <div className="flex justify-end">
-              <button
-                type="submit"
-                disabled={submitting || workEntries.length === 0}
-                className="flex items-center px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
-              >
-                {submitting ? (
-                  <div className="mr-2 h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                ) : (
-                  <Save className="mr-2" size={18} />
-                )}
-                Zapisz raport
-              </button>
+            {/* Przyciski do zapisywania - przeniesione na sam dół */}
+            <div className="flex justify-end space-x-4">
+              {reportStatus !== 'submitted' && (
+                <>
+                  <button
+                    type="button"
+                    onClick={saveAsDraft}
+                    disabled={submitting || workEntries.length === 0 || isFormDisabled}
+                    className="flex items-center px-6 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors disabled:opacity-50"
+                  >
+                    {submitting ? (
+                      <div className="mr-2 h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    ) : (
+                      <FileText className="mr-2" size={18} />
+                    )}
+                    Zapisz roboczy
+                  </button>
+
+                  <button
+                    type="submit"
+                    disabled={submitting || workEntries.length === 0 || isFormDisabled}
+                    className="flex items-center px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
+                  >
+                    {submitting ? (
+                      <div className="mr-2 h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    ) : (
+                      <Save className="mr-2" size={18} />
+                    )}
+                    Zapisz raport
+                  </button>
+                </>
+              )}
             </div>
           </form>
         </div>
@@ -663,7 +849,7 @@ const ProgressReportPage = () => {
             <button
               onClick={() => fileInputRef.current.click()}
               className="flex items-center text-indigo-600 hover:text-indigo-800"
-              disabled={uploadingImage}
+              disabled={uploadingImage || reportStatus === 'submitted'}
             >
               {uploadingImage ? (
                 <div className="animate-spin h-4 w-4 border-2 border-indigo-600 rounded-full border-t-transparent mr-1"></div>
@@ -678,7 +864,7 @@ const ProgressReportPage = () => {
               onChange={handleFileSelect}
               accept="image/*"
               className="hidden"
-              disabled={uploadingImage}
+              disabled={uploadingImage || reportStatus === 'submitted'}
             />
           </div>
 
@@ -706,13 +892,15 @@ const ProgressReportPage = () => {
                     }}
                   />
                   <div className="absolute inset-0 bg-black bg-opacity-50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                    <button
-                      onClick={(e) => handleDeleteImage(image.id, e)}
-                      className="text-white bg-red-600 p-1 rounded-full hover:bg-red-700"
-                      title="Usuń zdjęcie"
-                    >
-                      <Trash2 size={16} />
-                    </button>
+                    {reportStatus !== 'submitted' && (
+                      <button
+                        onClick={(e) => handleDeleteImage(image.id, e)}
+                        className="text-white bg-red-600 p-1 rounded-full hover:bg-red-700"
+                        title="Usuń zdjęcie"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}

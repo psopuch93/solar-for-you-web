@@ -70,6 +70,7 @@ urlpatterns = [
     path('remove-employee-from-quarter/', remove_employee_from_quarter, name='remove_employee_from_quarter'),
     path('validate-hr-requisition/', validate_hr_requisition, name='validate_hr_requisition'),
     path('validate-transport/', validate_transport, name='validate_transport'),
+    path('progress-reports-for-date/', get_progress_reports_for_date, name='progress_reports_for_date'),
 
     # Dołącz ścieżki routera NA KOŃCU
     path('', include(router.urls)),

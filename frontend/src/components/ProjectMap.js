@@ -83,7 +83,7 @@ const ProjectMap = ({ latitude, longitude, height = '300px' }) => {
     if (!window.google || !window.google.maps) {
       // Załaduj Google Maps API
       const script = document.createElement('script');
-      script.src = 'https://maps.googleapis.com/maps/api/js?key=';
+      script.src = 'https://maps.googleapis.com/maps/api/js?key=AIzaSyBdm6MCVBGS_jAHYm-9jGtARINQlssoEbQ';
       script.async = true;
       script.defer = true;
       script.onload = initializeMap;

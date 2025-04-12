@@ -28,7 +28,9 @@ import { EmployeeProvider } from '../contexts/EmployeeContext';
 import { RequisitionProvider } from '../contexts/RequisitionContext';
 import { getCsrfToken } from '../utils/csrfToken';
 import BrigadePage from './BrigadePage';
+import ProgressReportView from './ProgressReportView';
 import ProgressReportPage from './ProgressReportPage';
+import ReportsPage from './ReportsPage';
 
 
 
@@ -146,7 +148,9 @@ const BusinessDashboard = memo(({ setIsAuthenticated }) => {
                     <Route path="/requests/*" element={<RequisitionsPage />} />
                     <Route path="/warehouse/*" element={<WarehousePage />} />
                     <Route path="/brigade" element={<BrigadePage />} />
+                    <Route path="/analytics/*" element={<ReportsPage />} />
                     <Route path="/reports/*" element={<ProgressReportPage />} />
+                    <Route path="/reports/progress/*" element={<ProgressReportView />} />
                     {/* Pozostałe trasy można dodać w przyszłości */}
                     <Route path="*" element={<div>Strona nie została znaleziona</div>} />
                   </Routes>

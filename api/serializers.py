@@ -444,7 +444,7 @@ class ProgressReportSerializer(serializers.ModelSerializer):
     class Meta:
         model = ProgressReport
         fields = ('id', 'date', 'project', 'project_name', 'created_by', 'created_by_name',
-                  'created_at', 'updated_at', 'entries', 'images')
+                  'created_at', 'updated_at', 'entries', 'images', 'is_draft')
         read_only_fields = ('id', 'created_at', 'updated_at', 'created_by')
 
     def get_project_name(self, obj):

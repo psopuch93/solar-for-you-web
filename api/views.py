@@ -1102,7 +1102,8 @@ def create_progress_report(request):
         # Dane raportu
         report_data = {
             'date': request.data.get('date'),
-            'project': request.data.get('project')
+            'project': request.data.get('project'),
+            'is_draft': request.data.get('is_draft', False)  # Dodane obsługa flagi draft
         }
 
         # Walidacja
@@ -1120,6 +1121,10 @@ def create_progress_report(request):
         ).first()
 
         if existing_report:
+            # Zaktualizuj status draft istniejącego raportu
+            existing_report.is_draft = report_data['is_draft']
+            existing_report.save()
+
             # Zwróć istniejący raport
             serializer = ProgressReportSerializer(existing_report)
             return Response(serializer.data)
@@ -1128,7 +1133,8 @@ def create_progress_report(request):
         report = ProgressReport.objects.create(
             date=report_data['date'],
             project_id=report_data['project'],
-            created_by=request.user
+            created_by=request.user,
+            is_draft=report_data['is_draft']  # Zapisz status draft
         )
 
         # Utwórz wpisy

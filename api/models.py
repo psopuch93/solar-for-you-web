@@ -422,6 +422,7 @@ class ProgressReport(models.Model):
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='created_progress_reports', verbose_name="Utworzony przez")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Data utworzenia")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Data aktualizacji")
+    is_draft = models.BooleanField(default=False, verbose_name="Draft Status")
 
     def __str__(self):
         return f"Raport z dnia {self.date} - {self.project.name}"
