@@ -17,6 +17,7 @@ import {
   CheckCircle
 } from 'lucide-react';
 import { getCsrfToken } from '../utils/csrfToken';
+import ProgressReportBarChart from '../components/ProgressReportBarChart';
 
 const ProgressReportPage = () => {
   const [userSettings, setUserSettings] = useState(null);
