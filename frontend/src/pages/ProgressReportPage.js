@@ -44,6 +44,7 @@ const ProgressReportPage = () => {
 
   // Stany dla obsługi zdjęć
   const [images, setImages] = useState([]);
+  const [tempImages, setTempImages] = useState([]); // Nowy stan dla tymczasowych zdjęć
   const [uploadingImage, setUploadingImage] = useState(false);
   const [selectedImage, setSelectedImage] = useState(null);
   const [showImageModal, setShowImageModal] = useState(false);
@@ -323,26 +324,39 @@ const ProgressReportPage = () => {
   };
 
   // Pobierz zdjęcia dla raportu
-  const fetchReportImages = async (reportId) => {
-    try {
-      const response = await fetch(`/api/progress-report-images/?report_id=${reportId}`, {
-        credentials: 'same-origin',
-      });
+  // Poprawiona funkcja fetchReportImages
+    const fetchReportImages = async (reportId) => {
+      try {
+        // Upewnij się, że reportId jest zdefiniowane
+        if (!reportId) {
+          console.log("Brak reportId - nie można pobrać zdjęć");
+          setImages([]);
+          return;
+        }
 
-      if (!response.ok) {
-        // W przypadku błędu, nie pokazujemy komunikatu - po prostu zostawiamy pustą listę zdjęć
-        console.error('Błąd pobierania zdjęć:', response.status);
+        // Dodajemy parametr report_id do wywołania API
+        const response = await fetch(`/api/progress-report-images/?report_id=${reportId}`, {
+          credentials: 'same-origin',
+        });
+
+        if (!response.ok) {
+          console.error('Błąd pobierania zdjęć:', response.status);
+          setImages([]);
+          return;
+        }
+
+        const data = await response.json();
+
+        // Dodajemy filtrowanie zdjęć dla tego konkretnego raportu
+        const filteredImages = data.filter(image => image.report === parseInt(reportId));
+        console.log(`Pobrano ${filteredImages.length} zdjęć dla raportu ${reportId}`);
+
+        setImages(filteredImages);
+      } catch (err) {
+        console.error('Błąd pobierania zdjęć:', err);
         setImages([]);
-        return;
       }
-
-      const data = await response.json();
-      setImages(data);
-    } catch (err) {
-      console.error('Błąd pobierania zdjęć:', err);
-      setImages([]);
-    }
-  };
+    };
 
   // Handle employee selection
   const handleEmployeeSelection = (employeeId) => {
@@ -426,32 +440,52 @@ const ProgressReportPage = () => {
 
   // Funkcja do obsługi przesyłania zdjęć
   const handleFileSelect = (e) => {
-    const files = e.target.files;
-    if (files.length === 0) return;
+      const files = e.target.files;
+      if (files.length === 0) return;
 
-    handleUploadImage(files[0]);
-  };
+      const file = files[0];
 
-  const handleUploadImage = async (file) => {
-    // Sprawdź, czy mamy raport do którego można dodać zdjęcie
-    if (!reportData || !reportData.id) {
-      // Jeśli nie ma raportu, najpierw utworzymy raport
-      try {
-        await saveAsDraft(); // Zapisz jako wersję roboczą przed dodaniem zdjęcia
-
-        // Po utworzeniu raportu czekamy chwilę, aby upewnić się, że mamy już ID raportu
-        setTimeout(() => {
-          uploadImageToReport(file);
-        }, 500);
-      } catch (err) {
-        showNotification("Najpierw musisz zapisać raport, aby dodać zdjęcia", "error");
+      // Sprawdź czy nie próbujemy dodać zdjęcia do raportu roboczego, który nie jest w trybie edycji
+      if (reportStatus === 'draft' && !isEditingDraft) {
+        showNotification("Najpierw kliknij 'Edytuj wersję roboczą', aby dodać zdjęcia", "error");
+        return;
       }
-    } else {
-      // Jeśli mamy już raport, od razu przesyłamy zdjęcie
-      uploadImageToReport(file);
+
+      // Jeśli raport nie istnieje, dodaj zdjęcie do tymczasowej kolekcji
+      if (!reportData || !reportData.id) {
+        // Utwórz tymczasowe ID dla zdjęcia
+        const tempId = `temp-${Date.now()}`;
+
+        // Utwórz URL dla podglądu zdjęcia
+        const imageUrl = URL.createObjectURL(file);
+
+        // Dodaj zdjęcie do tymczasowej kolekcji
+        setTempImages(prev => [...prev, {
+          id: tempId,
+          file: file,
+          name: file.name,
+          image_url: imageUrl
+        }]);
+
+        showNotification("Zdjęcie zostało dodane do raportu. Zapisz raport, aby trwale je zachować.", "info");
+      } else {
+        // Jeśli raport już istnieje, wyślij zdjęcie od razu
+        handleUploadImage(file);
+      }
+    };
+
+  // Zmodyfikowana funkcja handleUploadImage
+  const handleUploadImage = async (file) => {
+    if (!reportData || !reportData.id) {
+      // Nie powinno się zdarzyć, ale na wszelki wypadek
+      showNotification("Błąd podczas przesyłania zdjęcia", "error");
+      return;
     }
+
+    uploadImageToReport(file);
   };
 
+  // Funkcja do przesyłania zdjęcia do istniejącego raportu
   const uploadImageToReport = async (file) => {
     if (!reportData || !reportData.id) {
       showNotification("Nie można dodać zdjęcia - brak raportu", "error");
@@ -491,32 +525,100 @@ const ProgressReportPage = () => {
     }
   };
 
+  // Funkcja do usuwania tymczasowych zdjęć
+  const handleDeleteTempImage = (tempId, e) => {
+    e && e.stopPropagation();
+
+    setTempImages(prev => prev.filter(img => img.id !== tempId));
+    showNotification("Tymczasowe zdjęcie zostało usunięte", "info");
+  };
+
+  // Funkcja do przesyłania wszystkich tymczasowych zdjęć po zapisaniu raportu
+  const uploadTempImagesToReport = async (reportId) => {
+    if (tempImages.length === 0) return;
+
+    let uploadedCount = 0;
+    let errorCount = 0;
+
+    // Pokazujemy wskaźnik ładowania
+    setUploadingImage(true);
+
+    for (const tempImage of tempImages) {
+      try {
+        const formData = new FormData();
+        formData.append('image', tempImage.file);
+        formData.append('report', reportId);
+        formData.append('name', tempImage.name);
+
+        const response = await fetch('/api/progress-report-images/', {
+          method: 'POST',
+          headers: {
+            'X-CSRFToken': getCsrfToken()
+          },
+          body: formData,
+          credentials: 'same-origin',
+        });
+
+        if (response.ok) {
+          uploadedCount++;
+        } else {
+          errorCount++;
+        }
+      } catch (err) {
+        errorCount++;
+        console.error("Błąd przesyłania tymczasowego zdjęcia:", err);
+      }
+    }
+
+    // Wyczyść tymczasowe zdjęcia po przesłaniu
+    setTempImages([]);
+
+    // Ukryj wskaźnik ładowania
+    setUploadingImage(false);
+
+    // Pokaż podsumowanie
+    if (errorCount === 0) {
+      showNotification(`Pomyślnie przesłano ${uploadedCount} zdjęć`, "success");
+    } else {
+      showNotification(`Przesłano ${uploadedCount} zdjęć, nie udało się przesłać ${errorCount} zdjęć`, "warning");
+    }
+
+    // Zaktualizuj listę zdjęć
+    fetchReportImages(reportId);
+  };
+
   const handleDeleteImage = async (imageId, e) => {
-    e && e.stopPropagation(); // Zatrzymaj propagację, aby nie otwierać modalu
+      e && e.stopPropagation(); // Zatrzymaj propagację, aby nie otwierać modalu
 
-    if (!window.confirm('Czy na pewno chcesz usunąć to zdjęcie?')) return;
-
-    try {
-      const response = await fetch(`/api/progress-report-images/${imageId}/`, {
-        method: 'DELETE',
-        headers: {
-          'X-CSRFToken': getCsrfToken()
-        },
-        credentials: 'same-origin',
-      });
-
-      if (!response.ok) {
-        throw new Error('Nie udało się usunąć zdjęcia');
+      // Sprawdź czy nie próbujemy usunąć zdjęcia z raportu roboczego, który nie jest w trybie edycji
+      if (reportStatus === 'draft' && !isEditingDraft) {
+        showNotification("Najpierw kliknij 'Edytuj wersję roboczą', aby usuwać zdjęcia", "error");
+        return;
       }
 
-      // Zaktualizuj lokalną listę zdjęć
-      setImages(prev => prev.filter(img => img.id !== imageId));
-      showNotification("Zdjęcie zostało usunięte", "success");
-    } catch (error) {
-      console.error('Błąd podczas usuwania zdjęcia:', error);
-      showNotification("Nie udało się usunąć zdjęcia", "error");
-    }
-  };
+      if (!window.confirm('Czy na pewno chcesz usunąć to zdjęcie?')) return;
+
+      try {
+        const response = await fetch(`/api/progress-report-images/${imageId}/`, {
+          method: 'DELETE',
+          headers: {
+            'X-CSRFToken': getCsrfToken()
+          },
+          credentials: 'same-origin',
+        });
+
+        if (!response.ok) {
+          throw new Error('Nie udało się usunąć zdjęcia');
+        }
+
+        // Zaktualizuj lokalną listę zdjęć
+        setImages(prev => prev.filter(img => img.id !== imageId));
+        showNotification("Zdjęcie zostało usunięte", "success");
+      } catch (error) {
+        console.error('Błąd podczas usuwania zdjęcia:', error);
+        showNotification("Nie udało się usunąć zdjęcia", "error");
+      }
+    };
 
   const handleImageClick = (image) => {
     setSelectedImage(image);
@@ -533,7 +635,7 @@ const ProgressReportPage = () => {
     await saveReport(false);
   };
 
-  // Nowa funkcja: Wspólna logika zapisu raportu
+  // Wspólna funkcja do zapisywania raportu
   const saveReport = async (isDraft) => {
     // Sprawdź czy użytkownik ma przypisany projekt
     if (!userProject) {
@@ -610,6 +712,11 @@ const ProgressReportPage = () => {
       setReportData(savedReport);
       setReportStatus(isDraft ? 'draft' : 'submitted');
       setIsEditingDraft(false);
+
+      // Prześlij tymczasowe zdjęcia, jeśli istnieją
+      if (savedReport && savedReport.id && tempImages.length > 0) {
+        await uploadTempImagesToReport(savedReport.id);
+      }
 
       // Pokaż odpowiednie powiadomienie
       showNotification(isDraft ? "Wersja robocza została zapisana" : "Raport został pomyślnie zapisany", "success");
@@ -993,75 +1100,155 @@ const ProgressReportPage = () => {
       )}
 
       {/* Sekcja zdjęć */}
-      {userProject && brigadeMembers.length > 0 && (
-        <div className="bg-white rounded-lg shadow-md p-6 mt-6">
-          <div className="flex justify-between items-center mb-4">
-            <h3 className="text-lg font-medium text-gray-700 flex items-center">
-              <ImageIcon className="mr-2" size={18} />
-              Zdjęcia z postępu prac
-            </h3>
-            <button
-              onClick={() => fileInputRef.current.click()}
-              className="flex items-center text-indigo-600 hover:text-indigo-800"
-              disabled={uploadingImage || reportStatus === 'submitted'}
-            >
-              {uploadingImage ? (
-                <div className="animate-spin h-4 w-4 border-2 border-indigo-600 rounded-full border-t-transparent mr-1"></div>
-              ) : (
-                <UploadCloud size={16} className="mr-1" />
-              )}
-              Dodaj zdjęcie
-            </button>
-            <input
-              type="file"
-              ref={fileInputRef}
-              onChange={handleFileSelect}
-              accept="image/*"
-              className="hidden"
-              disabled={uploadingImage || reportStatus === 'submitted'}
-            />
-          </div>
+        {userProject && brigadeMembers.length > 0 && (
+          <div className="bg-white rounded-lg shadow-md p-6 mt-6">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-medium text-gray-700 flex items-center">
+                <ImageIcon className="mr-2" size={18} />
+                Zdjęcia z postępu prac
+              </h3>
 
-          {images.length === 0 ? (
-            <div className="text-center py-8 text-gray-500 border-2 border-dashed border-gray-300 rounded-lg">
-              <ImageIcon className="mx-auto mb-2 text-gray-400" size={32} />
-              <p>Brak zdjęć dla tego raportu</p>
-              <p className="text-sm mt-2">Kliknij "Dodaj zdjęcie", aby dodać pierwsze zdjęcie</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-              {images.map(image => (
-                <div
-                  key={image.id}
-                  className="relative group rounded-lg overflow-hidden cursor-pointer"
-                  onClick={() => handleImageClick(image)}
+              {/* Przycisk dodawania zdjęć - dostępny tylko gdy:
+                  1. Raport nie istnieje LUB
+                  2. Raport jest w trybie roboczym i w trybie edycji LUB
+                  3. Raport jest w trybie roboczym, ale nie w trybie edycji (wtedy komunikat) */}
+              {!reportData ? (
+                <button
+                  onClick={() => fileInputRef.current.click()}
+                  className="flex items-center text-indigo-600 hover:text-indigo-800"
+                  disabled={uploadingImage}
                 >
-                  <img
-                    src={image.image_url || image.image}
-                    alt={image.name}
-                    className="w-full h-32 object-cover"
-                    onError={(e) => {
-                      e.target.onerror = null;
-                      e.target.src = "/api/placeholder/400/320";
-                    }}
-                  />
-                  <div className="absolute inset-0 bg-black bg-opacity-50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                    {reportStatus !== 'submitted' && (
+                  {uploadingImage ? (
+                    <div className="animate-spin h-4 w-4 border-2 border-indigo-600 rounded-full border-t-transparent mr-1"></div>
+                  ) : (
+                    <UploadCloud size={16} className="mr-1" />
+                  )}
+                  Dodaj zdjęcie
+                </button>
+              ) : reportStatus === 'draft' && isEditingDraft ? (
+                <button
+                  onClick={() => fileInputRef.current.click()}
+                  className="flex items-center text-indigo-600 hover:text-indigo-800"
+                  disabled={uploadingImage}
+                >
+                  {uploadingImage ? (
+                    <div className="animate-spin h-4 w-4 border-2 border-indigo-600 rounded-full border-t-transparent mr-1"></div>
+                  ) : (
+                    <UploadCloud size={16} className="mr-1" />
+                  )}
+                  Dodaj zdjęcie
+                </button>
+              ) : reportStatus === 'draft' && !isEditingDraft ? (
+                <div className="text-sm text-orange-600 flex items-center">
+                  <Info size={16} className="mr-1" />
+                  Edytuj wersję roboczą, aby dodać zdjęcia
+                </div>
+              ) : (
+                <div className="text-sm text-gray-500">
+                  Nie można dodawać zdjęć do zapisanego raportu
+                </div>
+              )}
+
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileSelect}
+                accept="image/*"
+                className="hidden"
+                disabled={uploadingImage ||
+                         reportStatus === 'submitted' ||
+                         (reportStatus === 'draft' && !isEditingDraft)}
+              />
+            </div>
+
+            {/* Pokaż informację o tymczasowych zdjęciach */}
+            {!reportData && tempImages.length > 0 && (
+              <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg mb-4">
+                <div className="flex items-start">
+                  <Info className="text-blue-500 mt-0.5 mr-2" size={18} />
+                  <div>
+                    <p className="text-blue-700 font-medium">Dodano tymczasowe zdjęcia do raportu</p>
+                    <p className="text-sm mt-1">Zdjęcia zostaną trwale zapisane po utworzeniu raportu.</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {images.length === 0 && tempImages.length === 0 ? (
+              <div className="text-center py-8 text-gray-500 border-2 border-dashed border-gray-300 rounded-lg">
+                <ImageIcon className="mx-auto mb-2 text-gray-400" size={32} />
+                <p>Brak zdjęć dla tego raportu</p>
+                {reportStatus !== 'submitted' &&
+                  (reportStatus !== 'draft' || isEditingDraft) && (
+                  <p className="text-sm mt-2">Kliknij "Dodaj zdjęcie", aby dodać pierwsze zdjęcie</p>
+                )}
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                {/* Wyświetl tymczasowe zdjęcia */}
+                {tempImages.map(tempImage => (
+                  <div
+                    key={tempImage.id}
+                    className="relative group rounded-lg overflow-hidden cursor-pointer"
+                    onClick={() => handleImageClick(tempImage)}
+                  >
+                    <div className="absolute top-0 right-0 bg-blue-500 text-white text-xs px-2 py-1 rounded-bl-lg">
+                      Nowe
+                    </div>
+                    <img
+                      src={tempImage.image_url}
+                      alt={tempImage.name}
+                      className="w-full h-32 object-cover"
+                      onError={(e) => {
+                        e.target.onerror = null;
+                        e.target.src = "/api/placeholder/400/320";
+                      }}
+                    />
+                    <div className="absolute inset-0 bg-black bg-opacity-50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                       <button
-                        onClick={(e) => handleDeleteImage(image.id, e)}
+                        onClick={(e) => handleDeleteTempImage(tempImage.id, e)}
                         className="text-white bg-red-600 p-1 rounded-full hover:bg-red-700"
                         title="Usuń zdjęcie"
                       >
                         <Trash2 size={16} />
                       </button>
-                    )}
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+                ))}
+
+                {/* Wyświetl zapisane zdjęcia */}
+                {images.map(image => (
+                  <div
+                    key={image.id}
+                    className="relative group rounded-lg overflow-hidden cursor-pointer"
+                    onClick={() => handleImageClick(image)}
+                  >
+                    <img
+                      src={image.image_url || image.image}
+                      alt={image.name}
+                      className="w-full h-32 object-cover"
+                      onError={(e) => {
+                        e.target.onerror = null;
+                        e.target.src = "/api/placeholder/400/320";
+                      }}
+                    />
+                    <div className="absolute inset-0 bg-black bg-opacity-50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                      {(reportStatus !== 'submitted' && (reportStatus !== 'draft' || isEditingDraft)) && (
+                        <button
+                          onClick={(e) => handleDeleteImage(image.id, e)}
+                          className="text-white bg-red-600 p-1 rounded-full hover:bg-red-700"
+                          title="Usuń zdjęcie"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
       {/* Modal do pokazywania zdjęć w pełnym rozmiarze */}
       {showImageModal && selectedImage && (
