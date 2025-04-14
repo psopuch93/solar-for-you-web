@@ -18,7 +18,10 @@ import {
   PlusCircle,
   Info,
   FileText,
-  Edit
+  Edit,
+  UserPlus,
+  CheckSquare,
+  Square
 } from 'lucide-react';
 import { getCsrfToken } from '../utils/csrfToken';
 import ProgressReportBarChart from '../components/ProgressReportBarChart';
@@ -34,6 +37,10 @@ const ProgressReportPage = () => {
   const [error, setError] = useState(null);
   const [notification, setNotification] = useState(null);
   const [reportData, setReportData] = useState(null);
+
+  // New state for employee selection
+  const [selectedEmployeeIds, setSelectedEmployeeIds] = useState([]);
+  const [showEmployeeSelector, setShowEmployeeSelector] = useState(false);
 
   // Stany dla obsługi zdjęć
   const [images, setImages] = useState([]);
@@ -170,27 +177,28 @@ const ProgressReportPage = () => {
           setBrigadeMembers(brigadeData);
 
           if (reportData?.entries && reportData.entries.length > 0) {
-            // Mapowanie wpisów z raportu do formatu używanego w komponencie
-            const mappedEntries = brigadeData.map(member => {
-              const entry = reportData.entries.find(e => e.employee === member.employee);
+            // Use only report entries instead of mapping through all brigade members
+            const mappedEntries = reportData.entries.map(entry => {
+              const brigadeMember = brigadeData.find(member => member.employee === entry.employee);
+              const employeeName = brigadeMember ? brigadeMember.employee_name : entry.employee_name || `Employee ID: ${entry.employee}`;
+
+              // Add this entry's employee ID to selected employees
+              if (!selectedEmployeeIds.includes(entry.employee)) {
+                setSelectedEmployeeIds(prev => [...prev, entry.employee]);
+              }
+
               return {
-                employeeId: member.employee,
-                employeeName: member.employee_name,
-                hoursWorked: entry ? entry.hours_worked.toString() : '',
-                notes: entry ? entry.notes || '' : ''
+                employeeId: entry.employee,
+                employeeName: employeeName,
+                hoursWorked: entry.hours_worked.toString(),
+                notes: entry.notes || ''
               };
             });
 
             setWorkEntries(mappedEntries);
           } else {
-            // Otherwise initialize empty entries
-            const initialWorkEntries = brigadeData.map(member => ({
-              employeeId: member.employee,
-              employeeName: member.employee_name,
-              hoursWorked: '',
-              notes: ''
-            }));
-            setWorkEntries(initialWorkEntries);
+            // Empty entries will be added only when employees are selected
+            setWorkEntries([]);
           }
         } else {
           console.error("Błąd pobierania członków brygady:", brigadeResponse.status);
@@ -276,37 +284,41 @@ const ProgressReportPage = () => {
 
         // Jeśli raport ma wpisy, załaduj je do stanu
         if (report.entries && report.entries.length > 0) {
-          // Mapowanie wpisów z raportu do formatu używanego w komponencie
-          const mappedEntries = brigadeMembers.map(member => {
-            const entry = report.entries.find(e => e.employee === member.employee);
+          // Use only report entries instead of mapping through all brigade members
+          const mappedEntries = report.entries.map(entry => {
+            const brigadeMember = brigadeMembers.find(member => member.employee === entry.employee);
+            const employeeName = brigadeMember ? brigadeMember.employee_name : entry.employee_name || `Employee ID: ${entry.employee}`;
+
             return {
-              employeeId: member.employee,
-              employeeName: member.employee_name,
-              hoursWorked: entry ? entry.hours_worked.toString() : '',
-              notes: entry ? entry.notes || '' : ''
+              employeeId: entry.employee,
+              employeeName: employeeName,
+              hoursWorked: entry.hours_worked.toString(),
+              notes: entry.notes || ''
             };
           });
 
           setWorkEntries(mappedEntries);
+
+          // Set the selected employee IDs based on the entries in the report
+          const employeeIds = report.entries.map(entry => entry.employee);
+          setSelectedEmployeeIds(employeeIds);
+        } else {
+          setWorkEntries([]);
+          setSelectedEmployeeIds([]);
         }
       } else {
         setReportData(null);
         setReportStatus(null);
         setIsEditingDraft(false);
-
-        // Inicjalizuj puste wpisy
-        const initialWorkEntries = brigadeMembers.map(member => ({
-          employeeId: member.employee,
-          employeeName: member.employee_name,
-          hoursWorked: '',
-          notes: ''
-        }));
-        setWorkEntries(initialWorkEntries);
+        setWorkEntries([]);
+        setSelectedEmployeeIds([]);
       }
     } catch (err) {
       console.error('Error fetching report:', err);
       setReportData(null);
       setReportStatus(null);
+      setWorkEntries([]);
+      setSelectedEmployeeIds([]);
     }
   };
 
@@ -332,6 +344,55 @@ const ProgressReportPage = () => {
     }
   };
 
+  // Handle employee selection
+  const handleEmployeeSelection = (employeeId) => {
+    setSelectedEmployeeIds(prev => {
+      if (prev.includes(employeeId)) {
+        // Remove the employee if already selected
+        const newSelection = prev.filter(id => id !== employeeId);
+
+        // Also remove from work entries if exists
+        setWorkEntries(entries => entries.filter(entry => entry.employeeId !== employeeId));
+
+        return newSelection;
+      } else {
+        // Add the employee if not selected
+        return [...prev, employeeId];
+      }
+    });
+  };
+
+  // Add selected employees to work entries
+  const addSelectedEmployeesToEntries = () => {
+    // Get currently selected employees that aren't in work entries yet
+    const currentEmployeeIds = workEntries.map(entry => entry.employeeId);
+    const employeesToAdd = selectedEmployeeIds.filter(id => !currentEmployeeIds.includes(id));
+
+    if (employeesToAdd.length === 0) {
+      showNotification("Wszyscy wybrani pracownicy są już dodani do raportu", "info");
+      return;
+    }
+
+    // Create new entries for those employees
+    const newEntries = employeesToAdd.map(id => {
+      const employee = brigadeMembers.find(member => member.employee === id);
+      return {
+        employeeId: id,
+        employeeName: employee ? employee.employee_name : `Pracownik ID: ${id}`,
+        hoursWorked: '',
+        notes: ''
+      };
+    });
+
+    // Add new entries to existing ones
+    setWorkEntries(prev => [...prev, ...newEntries]);
+
+    // Close the employee selector
+    setShowEmployeeSelector(false);
+
+    showNotification(`Dodano ${newEntries.length} pracowników do raportu`, "success");
+  };
+
   // Aktualizacja godzin pracy dla danego pracownika
   const handleHoursChange = (employeeId, hours) => {
     // Walidacja - tylko liczby i maksymalnie 24 godziny
@@ -355,6 +416,12 @@ const ProgressReportPage = () => {
           : entry
       )
     );
+  };
+
+  // Remove an employee from work entries
+  const handleRemoveEmployee = (employeeId) => {
+    setWorkEntries(prev => prev.filter(entry => entry.employeeId !== employeeId));
+    setSelectedEmployeeIds(prev => prev.filter(id => id !== employeeId));
   };
 
   // Funkcja do obsługi przesyłania zdjęć
@@ -474,9 +541,9 @@ const ProgressReportPage = () => {
       return;
     }
 
-    // Sprawdź czy są pracownicy w brygadzie
-    if (brigadeMembers.length === 0) {
-      setError("Nie masz przypisanych pracowników do swojej brygady. Przejdź do sekcji 'Brygada' aby dodać pracowników.");
+    // Sprawdź czy są wybrani pracownicy
+    if (workEntries.length === 0) {
+      setError("Nie wybrano żadnych pracowników do raportu. Wybierz pracowników, którzy pracowali w tym dniu.");
       return;
     }
 
@@ -591,6 +658,16 @@ const ProgressReportPage = () => {
 
   // Czy formularz powinien być zablokowany
   const isFormDisabled = reportStatus === 'submitted' || (reportStatus === 'draft' && !isEditingDraft);
+
+  // Helper function for work entries section title
+  const getWorkEntriesSectionTitle = () => {
+    if (workEntries.length === 0) {
+      return "Brak wybranych pracowników";
+    }
+    return `Raportowane godziny pracy (${workEntries.length} ${
+      workEntries.length === 1 ? 'pracownik' : workEntries.length < 5 ? 'pracownicy' : 'pracowników'
+    })`;
+  };
 
   return (
     <div>
@@ -746,58 +823,135 @@ const ProgressReportPage = () => {
               </div>
             </div>
 
+            {/* Employee Selection Section */}
             <div className="mb-6">
-              <h3 className="text-md font-medium text-gray-700 mb-3 flex items-center">
-                <Users className="mr-2" size={18} />
-                Członkowie brygady
-              </h3>
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-md font-medium text-gray-700 flex items-center">
+                  <Users className="mr-2" size={18} />
+                  Wybierz pracowników
+                </h3>
+                <button
+                  type="button"
+                  className="text-blue-600 hover:text-blue-800 flex items-center"
+                  onClick={() => setShowEmployeeSelector(!showEmployeeSelector)}
+                  disabled={isFormDisabled}
+                >
+                  {showEmployeeSelector ? 'Ukryj listę' : 'Pokaż listę'}
+                  {showEmployeeSelector ? <X size={16} className="ml-1" /> : <UserPlus size={16} className="ml-1" />}
+                </button>
+              </div>
 
-              <div className="bg-gray-50 p-4 rounded-lg">
-                {workEntries.length === 0 ? (
-                  <p className="text-gray-500 text-center">Brak pracowników w brygadzie</p>
-                ) : (
-                  <div className="space-y-4">
-                    {workEntries.map((entry) => (
-                      <div key={entry.employeeId} className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center bg-white p-4 rounded-lg border border-gray-200">
-                        <div>
-                          <p className="font-medium">{entry.employeeName}</p>
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Przepracowane godziny
-                          </label>
-                          <div className="relative">
-                            <input
-                              type="number"
-                              min="0"
-                              max="24"
-                              step="0.5"
-                              value={entry.hoursWorked}
-                              onChange={(e) => handleHoursChange(entry.employeeId, e.target.value)}
-                              className="pl-9 pr-4 py-2 w-full border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                              placeholder="0"
-                              disabled={isFormDisabled}
-                            />
-                            <Clock className="absolute left-3 top-2.5 text-gray-400" size={18} />
-                          </div>
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Notatki (opcjonalnie)
-                          </label>
-                          <input
-                            type="text"
-                            value={entry.notes}
-                            onChange={(e) => handleNotesChange(entry.employeeId, e.target.value)}
-                            className="px-4 py-2 w-full border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            placeholder="Dodatkowe informacje"
-                            disabled={isFormDisabled}
-                          />
-                        </div>
+              {showEmployeeSelector && (
+                <div className="bg-gray-50 p-4 rounded-lg mb-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {brigadeMembers.map(member => (
+                      <div
+                        key={member.employee}
+                        className={`p-3 border rounded-lg flex items-center cursor-pointer ${
+                          selectedEmployeeIds.includes(member.employee) ? 'border-blue-500 bg-blue-50' : 'border-gray-200'
+                        }`}
+                        onClick={() => !isFormDisabled && handleEmployeeSelection(member.employee)}
+                      >
+                        {selectedEmployeeIds.includes(member.employee) ?
+                          <CheckSquare className="text-blue-500 mr-2" size={20} /> :
+                          <Square className="text-gray-300 mr-2" size={20} />
+                        }
+                        <span>{member.employee_name}</span>
                       </div>
                     ))}
                   </div>
-                )}
+
+                  <div className="flex justify-end mt-4">
+                    <button
+                      type="button"
+                      className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors disabled:opacity-50 flex items-center"
+                      onClick={addSelectedEmployeesToEntries}
+                      disabled={isFormDisabled || selectedEmployeeIds.length === 0}
+                    >
+                      <UserPlus size={16} className="mr-2" />
+                      Dodaj wybranych pracowników
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Work Entries Section */}
+              <div>
+                <h3 className="text-md font-medium text-gray-700 mb-3 flex items-center">
+                  <Clock className="mr-2" size={18} />
+                  {getWorkEntriesSectionTitle()}
+                </h3>
+
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  {workEntries.length === 0 ? (
+                    <div className="text-center py-8 bg-gray-100 rounded-lg">
+                      <UserPlus className="mx-auto text-gray-400 mb-2" size={24} />
+                      <p className="text-gray-500">Nie wybrano żadnych pracowników</p>
+                      <button
+                        type="button"
+                        onClick={() => setShowEmployeeSelector(true)}
+                        className="mt-3 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+                        disabled={isFormDisabled}
+                      >
+                        Wybierz pracowników
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {workEntries.map((entry) => (
+                        <div key={entry.employeeId} className="grid grid-cols-1 md:grid-cols-10 gap-4 items-center bg-white p-4 rounded-lg border border-gray-200">
+                          <div className="md:col-span-3">
+                            <p className="font-medium">{entry.employeeName}</p>
+                          </div>
+                          <div className="md:col-span-3">
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                              Przepracowane godziny
+                            </label>
+                            <div className="relative">
+                              <input
+                                type="number"
+                                min="0"
+                                max="24"
+                                step="0.5"
+                                value={entry.hoursWorked}
+                                onChange={(e) => handleHoursChange(entry.employeeId, e.target.value)}
+                                className="pl-9 pr-4 py-2 w-full border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                placeholder="0"
+                                disabled={isFormDisabled}
+                              />
+                              <Clock className="absolute left-3 top-2.5 text-gray-400" size={18} />
+                            </div>
+                          </div>
+                          <div className="md:col-span-3">
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                              Notatki (opcjonalnie)
+                            </label>
+                            <input
+                              type="text"
+                              value={entry.notes}
+                              onChange={(e) => handleNotesChange(entry.employeeId, e.target.value)}
+                              className="px-4 py-2 w-full border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              placeholder="Dodatkowe informacje"
+                              disabled={isFormDisabled}
+                            />
+                          </div>
+                          <div className="md:col-span-1 flex justify-end items-center">
+                            {!isFormDisabled && (
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveEmployee(entry.employeeId)}
+                                className="text-red-500 hover:text-red-700 p-2"
+                                title="Usuń pracownika"
+                              >
+                                <Trash2 size={18} />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
