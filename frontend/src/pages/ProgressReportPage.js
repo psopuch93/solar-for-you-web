@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { getCsrfToken } from '../utils/csrfToken';
 import ProgressReportBarChart from '../components/ProgressReportBarChart';
+import ActivitiesSelector from '../components/ActivitiesSelector';
 
 const ProgressReportPage = () => {
   const [userSettings, setUserSettings] = useState(null);
@@ -38,6 +39,9 @@ const ProgressReportPage = () => {
   const [notification, setNotification] = useState(null);
   const [reportData, setReportData] = useState(null);
 
+
+  const [reportActivities, setReportActivities] = useState([]);
+  const [showActivitiesSection, setShowActivitiesSection] = useState(true);
   // New state for employee selection
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState([]);
   const [showEmployeeSelector, setShowEmployeeSelector] = useState(false);
@@ -68,19 +72,21 @@ const ProgressReportPage = () => {
 
   // Efekt do ładowania raportu i zdjęć po zmianie daty
   useEffect(() => {
-    if (userProject && userProject.id && reportDate && brigadeMembers.length > 0) {
-      fetchReportForDate();
-    }
-  }, [reportDate, userProject, brigadeMembers]);
+      if (userProject && userProject.id && reportDate && brigadeMembers.length > 0) {
+        fetchReportForDate();
+      }
+    }, [reportDate, userProject, brigadeMembers]);
 
   // Efekt do ładowania zdjęć po załadowaniu raportu
   useEffect(() => {
-    if (reportData && reportData.id) {
-      fetchReportImages(reportData.id);
-    } else {
-      setImages([]);
-    }
-  }, [reportData]);
+      if (reportData && reportData.id) {
+        fetchReportImages(reportData.id);
+        fetchReportActivities(reportData.id);
+      } else {
+        setImages([]);
+        setReportActivities([]);
+      }
+    }, [reportData]);
 
   // Pobieranie wszystkich potrzebnych danych
   const fetchData = async () => {
@@ -255,6 +261,31 @@ const ProgressReportPage = () => {
     if (reportData && reportStatus === 'draft') {
       setIsEditingDraft(true);
     }
+  };
+
+  const fetchReportActivities = async (reportId) => {
+      try {
+        const response = await fetch(`/api/progress-report-activities/?report_id=${reportId}`, {
+          credentials: 'same-origin',
+        });
+
+        if (!response.ok) {
+          console.error('Błąd pobierania aktywności:', response.status);
+          setReportActivities([]);
+          return;
+        }
+
+        const data = await response.json();
+        console.log(`Pobrano ${data.length} aktywności dla raportu ${reportId}`);
+        setReportActivities(data);
+      } catch (err) {
+        console.error('Błąd pobierania aktywności:', err);
+        setReportActivities([]);
+      }
+    };
+
+  const handleActivitiesChange = (activities) => {
+    setReportActivities(activities);
   };
 
   // Pobierz raport dla wybranej daty
@@ -639,9 +670,9 @@ const ProgressReportPage = () => {
   const saveReport = async (isDraft) => {
     // Sprawdź czy użytkownik ma przypisany projekt
     if (!userProject) {
-      setError("Nie możesz złożyć raportu bez przypisanego projektu. Przejdź do sekcji 'Brygada' aby przypisać projekt.");
-      return;
-    }
+        setError("Nie możesz złożyć raportu bez przypisanego projektu. Przejdź do sekcji 'Brygada' aby przypisać projekt.");
+        return;
+  }
 
     // Sprawdź czy są wybrani pracownicy
     if (workEntries.length === 0) {
@@ -1098,6 +1129,34 @@ const ProgressReportPage = () => {
           </form>
         </div>
       )}
+
+      {userProject && brigadeMembers.length > 0 && (
+          <div className="mb-6">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-lg font-medium text-gray-700 flex items-center">
+                <CheckSquare className="mr-2" size={20} />
+                Aktywności projektowe
+              </h2>
+              <button
+                type="button"
+                onClick={() => setShowActivitiesSection(!showActivitiesSection)}
+                className="text-blue-600 hover:text-blue-800 flex items-center"
+              >
+                {showActivitiesSection ? 'Ukryj' : 'Pokaż'}
+              </button>
+            </div>
+
+            {showActivitiesSection && (
+              <ActivitiesSelector
+                projectId={userProject.id}
+                reportId={reportData?.id}
+                isDisabled={reportStatus === 'submitted' || (reportStatus === 'draft' && !isEditingDraft)}
+                onActivitiesChange={handleActivitiesChange}
+                existingActivities={reportActivities}
+              />
+            )}
+          </div>
+        )}
 
       {/* Sekcja zdjęć */}
         {userProject && brigadeMembers.length > 0 && (

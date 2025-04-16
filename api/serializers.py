@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
-from .models import UserProfile, Project, Client, ProjectTag, Empl_tag, Employee, Requisition, RequisitionItem, Item, Quarter, QuarterImage, UserSettings, BrigadeMember, ProgressReportEntry, ProgressReportImage, ProgressReport, HRRequisition, HRRequisitionPosition, TransportRequest, TransportItem
+from .models import UserProfile, Project, Client, ProjectTag, Empl_tag, Employee, Requisition, RequisitionItem, Item, Quarter, QuarterImage, UserSettings, BrigadeMember, ProgressReportEntry, ProgressReportImage, ProgressReport, HRRequisition, HRRequisitionPosition, TransportRequest, TransportItem, ProjectActivityConfig, ProgressReportActivity
 
 class UserSerializer(serializers.ModelSerializer):
     """Serializer dla modelu User"""
@@ -576,3 +576,23 @@ class TransportRequestSerializer(serializers.ModelSerializer):
             TransportItem.objects.create(transport=transport_request, **item_data)
 
         return transport_request
+
+class ProjectActivityConfigSerializer(serializers.ModelSerializer):
+    """Serializer dla modelu ProjectActivityConfig"""
+    project_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ProjectActivityConfig
+        fields = ('id', 'project', 'project_name', 'config_data', 'created_at', 'updated_at')
+        read_only_fields = ('id', 'created_at', 'updated_at', 'project_name')
+
+    def get_project_name(self, obj):
+        return obj.project.name if obj.project else None
+
+class ProgressReportActivitySerializer(serializers.ModelSerializer):
+    """Serializer dla modelu ProgressReportActivity"""
+
+    class Meta:
+        model = ProgressReportActivity
+        fields = ('id', 'report', 'activity_type', 'sub_activity', 'zona', 'row', 'quantity', 'unit', 'notes', 'created_at', 'updated_at')
+        read_only_fields = ('id', 'created_at', 'updated_at')

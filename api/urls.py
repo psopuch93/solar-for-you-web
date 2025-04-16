@@ -16,7 +16,9 @@ from .views import (
     ProgressReportEntryViewSet, ProgressReportImageViewSet, create_progress_report,
     get_progress_reports_for_date,validate_hr_requisition,HRRequisitionViewSet,
     HRRequisitionPositionViewSet, TransportRequestViewSet, TransportItemViewSet,
-    validate_transport
+    validate_transport, ProjectActivityConfigViewSet, ProgressReportActivityViewSet,
+    get_project_activities_config, upload_project_activities_config,
+    add_activities_to_report
 )
 
 # Dodaj nową funkcję obsługującą CSRF
@@ -52,6 +54,8 @@ router.register(r'hr-requisitions', HRRequisitionViewSet)
 router.register(r'hr-requisition-positions', HRRequisitionPositionViewSet)
 router.register(r'transport-requests', TransportRequestViewSet)
 router.register(r'transport-items', TransportItemViewSet)
+router.register(r'project-activity-configs', ProjectActivityConfigViewSet)
+router.register(r'progress-report-activities', ProgressReportActivityViewSet)
 
 urlpatterns = [
     # Bezpośrednie ścieżki muszą być zdefiniowane PRZED include(router.urls)
@@ -71,6 +75,9 @@ urlpatterns = [
     path('validate-hr-requisition/', validate_hr_requisition, name='validate_hr_requisition'),
     path('validate-transport/', validate_transport, name='validate_transport'),
     path('progress-reports-for-date/', get_progress_reports_for_date, name='progress_reports_for_date'),
+    path('project-activities-config/', get_project_activities_config, name='project_activities_config'),
+    path('upload-project-activities-config/', upload_project_activities_config, name='upload_project_activities_config'),
+    path('add-activities-to-report/', add_activities_to_report, name='add_activities_to_report'),
 
     # Dołącz ścieżki routera NA KOŃCU
     path('', include(router.urls)),

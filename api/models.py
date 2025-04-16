@@ -747,3 +747,39 @@ class TransportItem(models.Model):
     class Meta:
         verbose_name = "Przesyłka"
         verbose_name_plural = "Przesyłki"
+
+class ProjectActivityConfig(models.Model):
+    """Model przechowujący konfigurację aktywności dla projektów"""
+    project = models.OneToOneField(Project, on_delete=models.CASCADE, related_name='activity_config', verbose_name="Projekt")
+    config_data = models.JSONField(verbose_name="Konfiguracja aktywności w formacie JSON")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Data utworzenia")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Data aktualizacji")
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='created_activity_configs', verbose_name="Utworzony przez")
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='updated_activity_configs', verbose_name="Zaktualizowany przez")
+
+    def __str__(self):
+        return f"Konfiguracja aktywności dla {self.project.name}"
+
+    class Meta:
+        verbose_name = "Konfiguracja aktywności projektu"
+        verbose_name_plural = "Konfiguracje aktywności projektów"
+
+class ProgressReportActivity(models.Model):
+    """Model reprezentujący aktywność w raporcie postępu"""
+    report = models.ForeignKey(ProgressReport, on_delete=models.CASCADE, related_name='activities', verbose_name="Raport")
+    activity_type = models.CharField(max_length=100, verbose_name="Typ aktywności")
+    sub_activity = models.CharField(max_length=100, verbose_name="Podaktywność")
+    zona = models.CharField(max_length=100, verbose_name="Zona")
+    row = models.CharField(max_length=100, verbose_name="Rząd")
+    quantity = models.PositiveIntegerField(verbose_name="Ilość")
+    unit = models.CharField(max_length=50, verbose_name="Jednostka")
+    notes = models.TextField(blank=True, null=True, verbose_name="Uwagi")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Data utworzenia")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Data aktualizacji")
+
+    def __str__(self):
+        return f"{self.activity_type} - {self.sub_activity} ({self.report.date})"
+
+    class Meta:
+        verbose_name = "Aktywność raportu postępu"
+        verbose_name_plural = "Aktywności raportów postępu"
