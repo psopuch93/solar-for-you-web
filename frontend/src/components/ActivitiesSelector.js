@@ -1,3 +1,4 @@
+// frontend/src/components/ActivitiesSelector.js
 import React, { useState, useEffect } from 'react';
 import { Clipboard, ArrowDown, Plus, Trash2, Save, AlertTriangle, HelpCircle, Check, CheckSquare as ListChecks } from 'lucide-react';
 import { getCsrfToken } from '../utils/csrfToken';
@@ -19,6 +20,7 @@ const ActivitiesSelector = ({
   const [selectedSubActivity, setSelectedSubActivity] = useState('');
   const [selectedZona, setSelectedZona] = useState('');
   const [selectedRow, setSelectedRow] = useState('');
+  const [selectedTable, setSelectedTable] = useState('');
   const [quantity, setQuantity] = useState('');
   const [maxQuantity, setMaxQuantity] = useState(null);
   const [unit, setUnit] = useState('');
@@ -28,6 +30,16 @@ const ActivitiesSelector = ({
   const [showAddForm, setShowAddForm] = useState(false);
   // Stan do śledzenia procesu zapisu
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+      // Resetuj lokalne aktywności, gdy zmienia się ID raportu
+      if (reportId) {
+        setActivities(existingActivities.length > 0 ? existingActivities : []);
+      } else {
+        // Jeśli nie ma reportId, zawsze resetuj do pustej tablicy
+        setActivities([]);
+      }
+    }, [reportId, existingActivities]);
 
   // Pobranie konfiguracji aktywności dla projektu
   useEffect(() => {
@@ -76,6 +88,7 @@ const ActivitiesSelector = ({
     setSelectedSubActivity('');
     setSelectedZona('');
     setSelectedRow('');
+    setSelectedTable('');
     setQuantity('');
     setMaxQuantity(null);
     setUnit('');
@@ -85,6 +98,7 @@ const ActivitiesSelector = ({
   useEffect(() => {
     setSelectedZona('');
     setSelectedRow('');
+    setSelectedTable('');
     setQuantity('');
     setMaxQuantity(null);
     setUnit('');
@@ -93,108 +107,133 @@ const ActivitiesSelector = ({
   // Po zmianie zony, zresetuj rząd i ilość
   useEffect(() => {
     setSelectedRow('');
+    setSelectedTable('');
     setQuantity('');
     setMaxQuantity(null);
   }, [selectedZona]);
 
   // Po zmianie rzędu, zresetuj ilość i ustaw jednostkę
   useEffect(() => {
-      setQuantity('');
+    setSelectedTable('');
+    setQuantity('');
 
-      // Znajdź jednostkę dla wybranej aktywności
-      if (activityConfig && selectedMainActivity && selectedSubActivity) {
-        if (selectedMainActivity === 'Logistyka') {
-          if (selectedSubActivity === 'Transport słupów') {
-            setUnit('sztuki');
-          } else if (selectedSubActivity === 'Transport modułów') {
-            setUnit('palety');
-          } else if (selectedSubActivity === 'Transport kabli') {
-            setUnit('metry');
-          } else if (selectedSubActivity.includes('Transport konstrukcji')) {
-            setUnit('sztuki');
-          }
-        } else if (selectedMainActivity === 'Konstrukcja') {
+    // Znajdź jednostkę dla wybranej aktywności
+    if (activityConfig && selectedMainActivity && selectedSubActivity) {
+      if (selectedMainActivity === 'Logistyka') {
+        if (selectedSubActivity === 'Transport słupów') {
           setUnit('sztuki');
-        } else if (selectedMainActivity === 'Moduły') {
+        } else if (selectedSubActivity === 'Transport modułów') {
+          setUnit('palety');
+        } else if (selectedSubActivity === 'Transport kabli') {
+          setUnit('metry');
+        } else if (selectedSubActivity.includes('Transport konstrukcji')) {
           setUnit('sztuki');
-        } else if (selectedMainActivity === 'Zakończenie budowy') {
-          setUnit('');
         }
+      } else if (selectedMainActivity === 'Konstrukcja') {
+        setUnit('sztuki');
+      } else if (selectedMainActivity === 'Moduły') {
+        setUnit('sztuki');
+      } else if (selectedMainActivity === 'Zakończenie budowy') {
+        setUnit('');
+      }
+    }
+
+    // Znajdź maksymalną ilość dla wybranego rzędu
+    if (activityConfig && selectedMainActivity && selectedSubActivity && selectedZona && selectedRow) {
+      // Znajdź odpowiednią sekcję konfiguracji
+      let configItems = [];
+
+      if (selectedMainActivity === 'Logistyka' && activityConfig.logistyka) {
+        configItems = activityConfig.logistyka;
+      } else if (selectedMainActivity === 'Konstrukcja' && activityConfig.konstrukcja) {
+        // Połącz wszystkie typy konstrukcji
+        Object.values(activityConfig.konstrukcja).forEach(items => {
+          if (Array.isArray(items)) {
+            configItems = [...configItems, ...items];
+          }
+        });
+      } else if (selectedMainActivity === 'Moduły' && activityConfig.moduly) {
+        configItems = activityConfig.moduly;
       }
 
-      // Znajdź maksymalną ilość dla wybranego rzędu
-      if (activityConfig && selectedMainActivity && selectedSubActivity && selectedZona && selectedRow) {
-        // Znajdź odpowiednią sekcję konfiguracji
-        let configItems = [];
+      // Znajdź konkretny wiersz dla zony i rzędu
+      const rowData = configItems.find(item =>
+        item.zona === selectedZona && item.rzad === selectedRow
+      );
 
-        if (selectedMainActivity === 'Logistyka' && activityConfig.logistyka) {
-          configItems = activityConfig.logistyka;
-        } else if (selectedMainActivity === 'Konstrukcja' && activityConfig.konstrukcja) {
-          // Połącz wszystkie typy konstrukcji
-          Object.values(activityConfig.konstrukcja).forEach(items => {
-            if (Array.isArray(items)) {
-              configItems = [...configItems, ...items];
-            }
-          });
-        } else if (selectedMainActivity === 'Moduły' && activityConfig.moduly) {
-          configItems = activityConfig.moduly;
-        }
-
-        // Znajdź konkretny wiersz dla zony i rzędu
-        const rowData = configItems.find(item =>
-          item.zona === selectedZona && item.rzad === selectedRow
-        );
-
-        if (rowData) {
-          if (selectedMainActivity === 'Logistyka') {
-            if (selectedSubActivity === 'Transport słupów') {
-              setMaxQuantity(rowData.ilość);
-            } else if (selectedSubActivity === 'Transport modułów') {
-              setMaxQuantity(rowData.ilość_palet);
-            } else if (selectedSubActivity === 'Transport kabli') {
-              // Brak limitu dla kabli
-              setMaxQuantity(null);
-            } else if (selectedSubActivity.includes('Transport konstrukcji')) {
-              if (selectedSubActivity.includes('Przedłużki') && rowData.przedłużki !== undefined) {
-                setMaxQuantity(rowData.przedłużki);
-              } else if (selectedSubActivity.includes('Belki główne') && rowData.belki_główne !== undefined) {
-                setMaxQuantity(rowData.belki_główne);
-              } else if (selectedSubActivity.includes('Stężenia ukośne') && rowData.stężenia_ukośne !== undefined) {
-                setMaxQuantity(rowData.stężenia_ukośne);
-              } else if (selectedSubActivity.includes('Płatwie') && rowData.płatwie !== undefined) {
-                setMaxQuantity(rowData.płatwie);
-              } else {
-                setMaxQuantity(null);
-              }
-            }
-          } else if (selectedMainActivity === 'Konstrukcja') {
-            // Dla podaktywności związanych ze strukturą
-            if (selectedSubActivity.includes('Struktura')) {
-              if (selectedSubActivity.includes('Przedłużki') && rowData.przedłużki !== undefined) {
-                setMaxQuantity(rowData.przedłużki);
-              } else if (selectedSubActivity.includes('Belki główne') && rowData.belki_główne !== undefined) {
-                setMaxQuantity(rowData.belki_główne);
-              } else if (selectedSubActivity.includes('Stężenia ukośne') && rowData.stężenia_ukośne !== undefined) {
-                setMaxQuantity(rowData.stężenia_ukośne);
-              } else if (selectedSubActivity.includes('Płatwie') && rowData.płatwie !== undefined) {
-                setMaxQuantity(rowData.płatwie);
-              } else {
-                setMaxQuantity(rowData.ilość);
-              }
+      if (rowData) {
+        if (selectedMainActivity === 'Logistyka') {
+          if (selectedSubActivity === 'Transport słupów') {
+            setMaxQuantity(rowData.ilość);
+          } else if (selectedSubActivity === 'Transport modułów') {
+            setMaxQuantity(rowData.ilość_palet);
+          } else if (selectedSubActivity === 'Transport kabli') {
+            // Brak limitu dla kabli
+            setMaxQuantity(null);
+          } else if (selectedSubActivity.includes('Transport konstrukcji')) {
+            if (selectedSubActivity.includes('Przedłużki') && rowData.przedłużki !== undefined) {
+              setMaxQuantity(rowData.przedłużki);
+            } else if (selectedSubActivity.includes('Belki główne') && rowData.belki_główne !== undefined) {
+              setMaxQuantity(rowData.belki_główne);
+            } else if (selectedSubActivity.includes('Stężenia ukośne') && rowData.stężenia_ukośne !== undefined) {
+              setMaxQuantity(rowData.stężenia_ukośne);
+            } else if (selectedSubActivity.includes('Płatwie') && rowData.płatwie !== undefined) {
+              setMaxQuantity(rowData.płatwie);
             } else {
-              // Dla innych podaktywności konstrukcji
+              setMaxQuantity(null);
+            }
+          }
+        } else if (selectedMainActivity === 'Konstrukcja') {
+          // Dla podaktywności związanych ze strukturą
+          if (selectedSubActivity.includes('Struktura')) {
+            if (selectedSubActivity.includes('Przedłużki') && rowData.przedłużki !== undefined) {
+              setMaxQuantity(rowData.przedłużki);
+            } else if (selectedSubActivity.includes('Belki główne') && rowData.belki_główne !== undefined) {
+              setMaxQuantity(rowData.belki_główne);
+            } else if (selectedSubActivity.includes('Stężenia ukośne') && rowData.stężenia_ukośne !== undefined) {
+              setMaxQuantity(rowData.stężenia_ukośne);
+            } else if (selectedSubActivity.includes('Płatwie') && rowData.płatwie !== undefined) {
+              setMaxQuantity(rowData.płatwie);
+            } else {
               setMaxQuantity(rowData.ilość);
             }
-          } else if (selectedMainActivity === 'Moduły') {
+          } else {
+            // Dla innych podaktywności konstrukcji
             setMaxQuantity(rowData.ilość);
           }
-        } else {
+        } else if (selectedMainActivity === 'Moduły') {
+          // Dla modułów ustawimy maxQuantity po wybraniu numeru stołu
           setMaxQuantity(null);
         }
       } else {
         setMaxQuantity(null);
       }
-    }, [selectedZona, selectedRow, activityConfig, selectedMainActivity, selectedSubActivity]);
+    } else {
+      setMaxQuantity(null);
+    }
+  }, [selectedZona, selectedRow, activityConfig, selectedMainActivity, selectedSubActivity]);
+
+  // Obsługa zmiany numeru stołu dla modułów
+  useEffect(() => {
+    // Dodaj kod do ustawienia maxQuantity dla stołów, jeśli selectedTable istnieje
+    if (selectedMainActivity === 'Moduły' && selectedTable && activityConfig?.moduly) {
+      const rowData = activityConfig.moduly.find(item =>
+        (item.zona === parseInt(selectedZona) || item.zona === selectedZona) &&
+        (item.rzad === parseInt(selectedRow) || item.rzad === selectedRow)
+      );
+
+      if (rowData && rowData.stoly) {
+        const tableData = rowData.stoly.find(stol =>
+          stol.numer === parseInt(selectedTable) || stol.numer === selectedTable
+        );
+
+        if (tableData && tableData.ilosc_modulow !== undefined) {
+          setMaxQuantity(tableData.ilosc_modulow);
+          return; // Wyjdź z useEffect, bo znaleźliśmy właściwe dane
+        }
+      }
+    }
+  }, [selectedTable, selectedMainActivity, selectedZona, selectedRow, activityConfig]);
 
   // Powiadom rodzica o zmianach w aktywnościach
   useEffect(() => {
@@ -202,6 +241,13 @@ const ActivitiesSelector = ({
       onActivitiesChange(activities);
     }
   }, [activities, onActivitiesChange]);
+
+  // Funkcja sprawdzająca czy wprowadzona ilość jest prawidłowa
+  const isQuantityValid = () => {
+    if (!quantity) return true;
+    const numQuantity = parseInt(quantity);
+    return maxQuantity === null || numQuantity <= maxQuantity;
+  };
 
   // Dodaj nową aktywność
   const handleAddActivity = () => {
@@ -226,6 +272,12 @@ const ActivitiesSelector = ({
       return;
     }
 
+    // Dodaj walidację numeru stołu dla modułów
+    if (selectedMainActivity === 'Moduły' && !selectedTable) {
+      setError('Wybierz numer stołu');
+      return;
+    }
+
     // Dla zakończenia budowy nie wymagamy ilości
     if (selectedMainActivity !== 'Zakończenie budowy' && !quantity) {
       setError('Podaj ilość');
@@ -245,6 +297,7 @@ const ActivitiesSelector = ({
       sub_activity: selectedSubActivity,
       zona: selectedZona,
       row: selectedRow,
+      table: selectedMainActivity === 'Moduły' ? selectedTable : undefined,
       quantity: selectedMainActivity === 'Zakończenie budowy' ? 0 : parseInt(quantity),
       unit: unit,
       notes: notes
@@ -258,6 +311,7 @@ const ActivitiesSelector = ({
     setSelectedSubActivity('');
     setSelectedZona('');
     setSelectedRow('');
+    setSelectedTable('');
     setQuantity('');
     setNotes('');
 
@@ -295,6 +349,7 @@ const ActivitiesSelector = ({
             sub_activity: activity.sub_activity,
             zona: activity.zona,
             row: activity.row,
+            table: activity.table,
             quantity: activity.quantity,
             unit: activity.unit,
             notes: activity.notes
@@ -468,300 +523,334 @@ const ActivitiesSelector = ({
   };
 
   const renderZonaOptions = () => {
-      if (!activityConfig || !selectedMainActivity || !selectedSubActivity) return null;
+    if (!activityConfig || !selectedMainActivity || !selectedSubActivity) return null;
 
-      let zonas = [];
+    let zonas = [];
 
-      // Funkcja pomocnicza do zbierania unikalnych zon z sekcji
-      const collectZonasFromSection = (section) => {
-        if (!Array.isArray(section)) return [];
-        const zonaSet = new Set();
-        section.forEach(item => {
-          if (item.zona) zonaSet.add(item.zona);
-        });
-        return Array.from(zonaSet);
-      };
+    // Funkcja pomocnicza do zbierania unikalnych zon z sekcji
+    const collectZonasFromSection = (section) => {
+      if (!Array.isArray(section)) return [];
+      const zonaSet = new Set();
+      section.forEach(item => {
+        if (item.zona) zonaSet.add(item.zona);
+      });
+      return Array.from(zonaSet);
+    };
 
-      // Pobierz odpowiednią sekcję z konfiguracji
-      if (selectedMainActivity === 'Logistyka') {
-        // Dla transportu może być potrzebne dodatkowe filtrowanie
-        if (selectedSubActivity.includes('Transport konstrukcji')) {
-          // Filtrowanie zon dla transportu elementów konstrukcji
-          const specificKey = selectedSubActivity.includes('Przedłużki') ? 'przedłużki' :
-                             selectedSubActivity.includes('Belki główne') ? 'belki_główne' :
-                             selectedSubActivity.includes('Stężenia ukośne') ? 'stężenia_ukośne' :
-                             selectedSubActivity.includes('Płatwie') ? 'płatwie' : null;
+    // Pobierz odpowiednią sekcję z konfiguracji
+    if (selectedMainActivity === 'Logistyka') {
+      // Dla transportu może być potrzebne dodatkowe filtrowanie
+      if (selectedSubActivity.includes('Transport konstrukcji')) {
+        // Filtrowanie zon dla transportu elementów konstrukcji
+        const specificKey = selectedSubActivity.includes('Przedłużki') ? 'przedłużki' :
+                          selectedSubActivity.includes('Belki główne') ? 'belki_główne' :
+                          selectedSubActivity.includes('Stężenia ukośne') ? 'stężenia_ukośne' :
+                          selectedSubActivity.includes('Płatwie') ? 'płatwie' : null;
 
-          if (specificKey && Array.isArray(activityConfig.logistyka)) {
-            const filteredSection = activityConfig.logistyka.filter(item => item[specificKey] !== undefined);
-            zonas = collectZonasFromSection(filteredSection);
-          } else {
-            zonas = collectZonasFromSection(activityConfig.logistyka);
-          }
-        }
-        // Dla transportu słupów i modułów
-        else if (selectedSubActivity === 'Transport słupów') {
-          const filteredSection = Array.isArray(activityConfig.logistyka) ?
-            activityConfig.logistyka.filter(item => item.ilość !== undefined) : [];
+        if (specificKey && Array.isArray(activityConfig.logistyka)) {
+          const filteredSection = activityConfig.logistyka.filter(item => item[specificKey] !== undefined);
           zonas = collectZonasFromSection(filteredSection);
-        }
-        else if (selectedSubActivity === 'Transport modułów') {
-          const filteredSection = Array.isArray(activityConfig.logistyka) ?
-            activityConfig.logistyka.filter(item => item.ilość_palet !== undefined) : [];
-          zonas = collectZonasFromSection(filteredSection);
-        }
-        // Dla pozostałych podaktywności logistyki
-        else {
+        } else {
           zonas = collectZonasFromSection(activityConfig.logistyka);
         }
       }
-      // Dla konstrukcji
-      else if (selectedMainActivity === 'Konstrukcja') {
-        // Znajdź wszystkie zony dla wszystkich typów konstrukcji
-        const zonaSet = new Set();
+      // Dla transportu słupów i modułów
+      else if (selectedSubActivity === 'Transport słupów') {
+        const filteredSection = Array.isArray(activityConfig.logistyka) ?
+          activityConfig.logistyka.filter(item => item.ilość !== undefined) : [];
+        zonas = collectZonasFromSection(filteredSection);
+      }
+      else if (selectedSubActivity === 'Transport modułów') {
+        const filteredSection = Array.isArray(activityConfig.logistyka) ?
+          activityConfig.logistyka.filter(item => item.ilość_palet !== undefined) : [];
+        zonas = collectZonasFromSection(filteredSection);
+      }
+      // Dla pozostałych podaktywności logistyki
+      else {
+        zonas = collectZonasFromSection(activityConfig.logistyka);
+      }
+    }
+    // Dla konstrukcji
+    else if (selectedMainActivity === 'Konstrukcja') {
+      // Znajdź wszystkie zony dla wszystkich typów konstrukcji
+      const zonaSet = new Set();
 
-        if (activityConfig.konstrukcja) {
-          Object.keys(activityConfig.konstrukcja).forEach(type => {
-            const sectionData = activityConfig.konstrukcja[type];
+      if (activityConfig.konstrukcja) {
+        Object.keys(activityConfig.konstrukcja).forEach(type => {
+          const sectionData = activityConfig.konstrukcja[type];
 
-            // Jeśli podaktywność związana ze strukturą, możemy filtrować
-            if (selectedSubActivity.includes('Struktura')) {
-              const specificKey = selectedSubActivity.includes('Przedłużki') ? 'przedłużki' :
-                                 selectedSubActivity.includes('Belki główne') ? 'belki_główne' :
-                                 selectedSubActivity.includes('Stężenia ukośne') ? 'stężenia_ukośne' :
-                                 selectedSubActivity.includes('Płatwie') ? 'płatwie' : null;
+          // Jeśli podaktywność związana ze strukturą, możemy filtrować
+          if (selectedSubActivity.includes('Struktura')) {
+            const specificKey = selectedSubActivity.includes('Przedłużki') ? 'przedłużki' :
+                              selectedSubActivity.includes('Belki główne') ? 'belki_główne' :
+                              selectedSubActivity.includes('Stężenia ukośne') ? 'stężenia_ukośne' :
+                              selectedSubActivity.includes('Płatwie') ? 'płatwie' : null;
 
-              if (specificKey && Array.isArray(sectionData)) {
-                const filteredItems = sectionData.filter(item => item[specificKey] !== undefined);
-                filteredItems.forEach(item => {
-                  if (item.zona) zonaSet.add(item.zona);
-                });
-              } else if (Array.isArray(sectionData)) {
-                sectionData.forEach(item => {
-                  if (item.zona) zonaSet.add(item.zona);
-                });
-              }
-            }
-            // Dla innych podaktywności konstrukcji
-            else if (Array.isArray(sectionData)) {
+            if (specificKey && Array.isArray(sectionData)) {
+              const filteredItems = sectionData.filter(item => item[specificKey] !== undefined);
+              filteredItems.forEach(item => {
+                if (item.zona) zonaSet.add(item.zona);
+              });
+            } else if (Array.isArray(sectionData)) {
               sectionData.forEach(item => {
                 if (item.zona) zonaSet.add(item.zona);
               });
             }
-          });
-        }
-
-        zonas = Array.from(zonaSet);
+          }
+          // Dla innych podaktywności konstrukcji
+          else if (Array.isArray(sectionData)) {
+            sectionData.forEach(item => {
+              if (item.zona) zonaSet.add(item.zona);
+            });
+          }
+        });
       }
-      // Dla modułów
-      else if (selectedMainActivity === 'Moduły') {
-        zonas = collectZonasFromSection(activityConfig.moduly);
+
+      zonas = Array.from(zonaSet);
+    }
+    // Dla modułów
+    else if (selectedMainActivity === 'Moduły') {
+      zonas = collectZonasFromSection(activityConfig.moduly);
+    }
+    // Dla zakończenia budowy - zbierz zony ze wszystkich sekcji
+    else if (selectedMainActivity === 'Zakończenie budowy') {
+      const zonaSet = new Set();
+
+      if (activityConfig.logistyka && Array.isArray(activityConfig.logistyka)) {
+        activityConfig.logistyka.forEach(item => {
+          if (item.zona) zonaSet.add(item.zona);
+        });
       }
-      // Dla zakończenia budowy - zbierz zony ze wszystkich sekcji
-      else if (selectedMainActivity === 'Zakończenie budowy') {
-        const zonaSet = new Set();
 
-        if (activityConfig.logistyka && Array.isArray(activityConfig.logistyka)) {
-          activityConfig.logistyka.forEach(item => {
-            if (item.zona) zonaSet.add(item.zona);
-          });
-        }
+      if (activityConfig.konstrukcja) {
+        Object.values(activityConfig.konstrukcja).forEach(items => {
+          if (Array.isArray(items)) {
+            items.forEach(item => {
+              if (item.zona) zonaSet.add(item.zona);
+            });
+          }
+        });
+      }
 
-        if (activityConfig.konstrukcja) {
-          Object.values(activityConfig.konstrukcja).forEach(items => {
-            if (Array.isArray(items)) {
-              items.forEach(item => {
-                if (item.zona) zonaSet.add(item.zona);
-              });
+      if (activityConfig.moduly && Array.isArray(activityConfig.moduly)) {
+        activityConfig.moduly.forEach(item => {
+          if (item.zona) zonaSet.add(item.zona);
+        });
+      }
+
+      zonas = Array.from(zonaSet);
+    }
+
+    // Jeśli nie znaleziono żadnych zon, spróbuj pobrać je ze wszystkich sekcji
+    if (zonas.length === 0) {
+      const zonaSet = new Set();
+
+      if (activityConfig.logistyka && Array.isArray(activityConfig.logistyka)) {
+        activityConfig.logistyka.forEach(item => {
+          if (item.zona) zonaSet.add(item.zona);
+        });
+      }
+
+      if (activityConfig.konstrukcja) {
+        Object.values(activityConfig.konstrukcja).forEach(items => {
+          if (Array.isArray(items)) {
+            items.forEach(item => {
+              if (item.zona) zonaSet.add(item.zona);
+            });
+          }
+        });
+      }
+
+      if (activityConfig.moduly && Array.isArray(activityConfig.moduly)) {
+        activityConfig.moduly.forEach(item => {
+          if (item.zona) zonaSet.add(item.zona);
+        });
+      }
+
+      zonas = Array.from(zonaSet);
+    }
+
+    // Sortowanie zon
+    zonas.sort();
+
+    return (
+      <select
+        value={selectedZona}
+        onChange={(e) => setSelectedZona(e.target.value)}
+        className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
+        disabled={isDisabled || !selectedSubActivity}
+      >
+        <option value="">Wybierz zonę</option>
+        {zonas.map(zona => (
+          <option key={zona} value={zona}>{zona}</option>
+        ))}
+      </select>
+    );
+  };
+
+  // Renderowanie opcji dla rzędów
+  const renderRowOptions = () => {
+    if (!activityConfig || !selectedMainActivity || !selectedSubActivity || !selectedZona) return null;
+
+    // Zbieramy wszystkie rzędy dla wybranej zony i podaktywności
+    const rowSet = new Set();
+
+    // Znajdź i przetwórz dane dla wybranej kombinacji
+    if (selectedMainActivity === 'Logistyka') {
+      const logistykaData = activityConfig.logistyka;
+
+      if (Array.isArray(logistykaData)) {
+        // Filtruj elementy dla wybranej zony
+        logistykaData.forEach(item => {
+          // Sprawdź, czy item zawiera zonę i czy jest to nasza wybrana zona
+          if (item.zona === parseInt(selectedZona) || item.zona === selectedZona) {
+            // Element ma zonę, sprawdź czy ma rzad
+            if (item.rzad !== undefined) {
+              // Dodaj rzad do zbioru
+              rowSet.add(item.rzad.toString());
             }
-          });
-        }
-
-        if (activityConfig.moduly && Array.isArray(activityConfig.moduly)) {
-          activityConfig.moduly.forEach(item => {
-            if (item.zona) zonaSet.add(item.zona);
-          });
-        }
-
-        zonas = Array.from(zonaSet);
+          }
+        });
       }
-
-      // Jeśli nie znaleziono żadnych zon, spróbuj pobrać je ze wszystkich sekcji
-      if (zonas.length === 0) {
-        const zonaSet = new Set();
-
-        if (activityConfig.logistyka && Array.isArray(activityConfig.logistyka)) {
-          activityConfig.logistyka.forEach(item => {
-            if (item.zona) zonaSet.add(item.zona);
-          });
-        }
-
-        if (activityConfig.konstrukcja) {
-          Object.values(activityConfig.konstrukcja).forEach(items => {
-            if (Array.isArray(items)) {
-              items.forEach(item => {
-                if (item.zona) zonaSet.add(item.zona);
-              });
-            }
-          });
-        }
-
-        if (activityConfig.moduly && Array.isArray(activityConfig.moduly)) {
-          activityConfig.moduly.forEach(item => {
-            if (item.zona) zonaSet.add(item.zona);
-          });
-        }
-
-        zonas = Array.from(zonaSet);
-      }
-
-      // Sortowanie zon
-      zonas.sort();
-
-      return (
-        <select
-          value={selectedZona}
-          onChange={(e) => setSelectedZona(e.target.value)}
-          className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
-          disabled={isDisabled || !selectedSubActivity}
-        >
-          <option value="">Wybierz zonę</option>
-          {zonas.map(zona => (
-            <option key={zona} value={zona}>{zona}</option>
-          ))}
-        </select>
-      );
-    };
-
-      // Renderowanie opcji dla rzędów - ZUPEŁNIE NOWA WERSJA
-    const renderRowOptions = () => {
-      if (!activityConfig || !selectedMainActivity || !selectedSubActivity || !selectedZona) return null;
-
-      // Zbieramy wszystkie rzędy dla wybranej zony i podaktywności
-      const rowSet = new Set();
-
-      // Znajdź i przetwórz dane dla wybranej kombinacji
-      if (selectedMainActivity === 'Logistyka') {
-        const logistykaData = activityConfig.logistyka;
-
-        if (Array.isArray(logistykaData)) {
-          // Filtruj elementy dla wybranej zony
-          logistykaData.forEach(item => {
-            // Sprawdź, czy item zawiera zonę i czy jest to nasza wybrana zona
-            if (item.zona === parseInt(selectedZona) || item.zona === selectedZona) {
-              // Element ma zonę, sprawdź czy ma rzad
-              if (item.rzad !== undefined) {
-                // Dodaj rzad do zbioru
-                rowSet.add(item.rzad.toString());
-              }
-            }
-          });
-        }
-      } else if (selectedMainActivity === 'Konstrukcja') {
-        // Podobna logika dla konstrukcji
-        if (activityConfig.konstrukcja) {
-          Object.values(activityConfig.konstrukcja).forEach(items => {
-            if (Array.isArray(items)) {
-              items.forEach(item => {
-                if (item.zona === parseInt(selectedZona) || item.zona === selectedZona) {
-                  if (item.rzad !== undefined) {
-                    rowSet.add(item.rzad.toString());
-                  }
+    } else if (selectedMainActivity === 'Konstrukcja') {
+      // Podobna logika dla konstrukcji
+      if (activityConfig.konstrukcja) {
+        Object.values(activityConfig.konstrukcja).forEach(items => {
+          if (Array.isArray(items)) {
+            items.forEach(item => {
+              if (item.zona === parseInt(selectedZona) || item.zona === selectedZona) {
+                if (item.rzad !== undefined) {
+                  rowSet.add(item.rzad.toString());
                 }
-              });
-            }
-          });
-        }
-      } else if (selectedMainActivity === 'Moduły') {
-        // Podobna logika dla modułów
-        if (Array.isArray(activityConfig.moduly)) {
-          activityConfig.moduly.forEach(item => {
-            if (item.zona === parseInt(selectedZona) || item.zona === selectedZona) {
-              if (item.rzad !== undefined) {
-                rowSet.add(item.rzad.toString());
-              }
-            }
-          });
-        }
-      }
-
-      // Konwertuj Set na tablicę i sortuj
-      let rows = Array.from(rowSet);
-
-      // Sortowanie rzędów
-      rows.sort((a, b) => {
-        // Spróbuj przekonwertować na liczby, jeśli możliwe
-        const numA = parseInt(a);
-        const numB = parseInt(b);
-
-        if (!isNaN(numA) && !isNaN(numB)) {
-          return numA - numB;
-        }
-
-        // Jeśli nie da się przekonwertować, sortuj alfabetycznie
-        return a.localeCompare(b);
-      });
-
-      // Dodaj debugowanie - możesz usunąć później
-      console.log(`Po przetworzeniu znaleziono ${rows.length} rzędów:`, rows);
-
-      return (
-        <select
-          value={selectedRow}
-          onChange={(e) => setSelectedRow(e.target.value)}
-          className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
-          disabled={isDisabled || !selectedZona}
-        >
-          <option value="">Wybierz rząd</option>
-          {rows.map(row => (
-            <option key={row} value={row}>{row}</option>
-          ))}
-        </select>
-      );
-    };
-
-    useEffect(() => {
-      if (activityConfig && selectedMainActivity && selectedSubActivity && selectedZona) {
-        console.group("DEBUG - Dane dla wybranej konfiguracji");
-        console.log("Główna aktywność:", selectedMainActivity);
-        console.log("Podaktywność:", selectedSubActivity);
-        console.log("Zona:", selectedZona);
-        console.log("Rząd:", selectedRow);
-
-        let configSection;
-        if (selectedMainActivity === 'Logistyka') {
-          configSection = activityConfig.logistyka;
-          console.log("Sekcja konfiguracji (Logistyka):", configSection);
-        } else if (selectedMainActivity === 'Konstrukcja') {
-          if (activityConfig.konstrukcja) {
-            console.log("Konstrukcja typy:", Object.keys(activityConfig.konstrukcja));
-            // Pobierz wszystkie dane konstrukcji
-            configSection = [];
-            Object.values(activityConfig.konstrukcja).forEach(sectionData => {
-              if (Array.isArray(sectionData)) {
-                configSection = [...configSection, ...sectionData];
               }
             });
-            console.log("Sekcja konfiguracji (Konstrukcja, wszystkie typy):", configSection);
           }
-        } else if (selectedMainActivity === 'Moduły') {
-          configSection = activityConfig.moduly;
-          console.log("Sekcja konfiguracji (Moduły):", configSection);
-        }
-
-        // Filtruj po zonie
-        if (configSection && Array.isArray(configSection)) {
-          const filtered = configSection.filter(item => item.zona === selectedZona);
-          console.log(`Elementy dla zony ${selectedZona}:`, filtered);
-
-          // Sprawdź, jakie rzędy są dostępne
-          const availableRows = filtered.map(item => item.rzad).filter(Boolean);
-          console.log("Dostępne rzędy:", availableRows);
-        }
-
-        console.groupEnd();
+        });
       }
-    }, [selectedMainActivity, selectedSubActivity, selectedZona, selectedRow, activityConfig]);
+    } else if (selectedMainActivity === 'Moduły') {
+      // Podobna logika dla modułów
+      if (Array.isArray(activityConfig.moduly)) {
+        activityConfig.moduly.forEach(item => {
+          if (item.zona === parseInt(selectedZona) || item.zona === selectedZona) {
+            if (item.rzad !== undefined) {
+              rowSet.add(item.rzad.toString());
+            }
+          }
+        });
+      }
+    }
+
+    // Konwertuj Set na tablicę i sortuj
+    let rows = Array.from(rowSet);
+
+    // Sortowanie rzędów
+    rows.sort((a, b) => {
+      // Spróbuj przekonwertować na liczby, jeśli możliwe
+      const numA = parseInt(a);
+      const numB = parseInt(b);
+
+      if (!isNaN(numA) && !isNaN(numB)) {
+        return numA - numB;
+      }
+
+      // Jeśli nie da się przekonwertować, sortuj alfabetycznie
+      return a.localeCompare(b);
+    });
+
+    return (
+      <select
+        value={selectedRow}
+        onChange={(e) => setSelectedRow(e.target.value)}
+        className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
+        disabled={isDisabled || !selectedZona}
+      >
+        <option value="">Wybierz rząd</option>
+        {rows.map(row => (
+          <option key={row} value={row}>{row}</option>
+        ))}
+      </select>
+    );
+  };
+
+  // Renderowanie opcji dla numerów stołów
+  const renderTableOptions = () => {
+    if (!activityConfig || !selectedMainActivity || !selectedSubActivity ||
+        !selectedZona || !selectedRow || selectedMainActivity !== 'Moduły') {
+      return null;
+    }
+
+    // Pobierz dane dla wybranej zony i rzędu
+    let tableNumbers = [];
+    if (Array.isArray(activityConfig.moduly)) {
+      // Znajdź odpowiedni rząd i zonę
+      const rowData = activityConfig.moduly.find(item =>
+        (item.zona === parseInt(selectedZona) || item.zona === selectedZona) &&
+        (item.rzad === parseInt(selectedRow) || item.rzad === selectedRow)
+      );
+
+      if (rowData && rowData.stoly && Array.isArray(rowData.stoly)) {
+        // Pobierz numery stołów
+        tableNumbers = rowData.stoly.map(stol => stol.numer);
+      }
+    }
+
+    return (
+      <select
+        value={selectedTable}
+        onChange={(e) => setSelectedTable(e.target.value)}
+        className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
+        disabled={isDisabled || tableNumbers.length === 0}
+      >
+        <option value="">Wybierz numer stołu</option>
+        {tableNumbers.map(number => (
+          <option key={number} value={number}>{number}</option>
+        ))}
+      </select>
+    );
+  };
+
+  useEffect(() => {
+    if (activityConfig && selectedMainActivity && selectedSubActivity && selectedZona) {
+      console.group("DEBUG - Dane dla wybranej konfiguracji");
+      console.log("Główna aktywność:", selectedMainActivity);
+      console.log("Podaktywność:", selectedSubActivity);
+      console.log("Zona:", selectedZona);
+      console.log("Rząd:", selectedRow);
+
+      let configSection;
+      if (selectedMainActivity === 'Logistyka') {
+        configSection = activityConfig.logistyka;
+        console.log("Sekcja konfiguracji (Logistyka):", configSection);
+      } else if (selectedMainActivity === 'Konstrukcja') {
+        if (activityConfig.konstrukcja) {
+          console.log("Konstrukcja typy:", Object.keys(activityConfig.konstrukcja));
+          // Pobierz wszystkie dane konstrukcji
+          configSection = [];
+          Object.values(activityConfig.konstrukcja).forEach(sectionData => {
+            if (Array.isArray(sectionData)) {
+              configSection = [...configSection, ...sectionData];
+            }
+          });
+          console.log("Sekcja konfiguracji (Konstrukcja, wszystkie typy):", configSection);
+        }
+      } else if (selectedMainActivity === 'Moduły') {
+        configSection = activityConfig.moduly;
+        console.log("Sekcja konfiguracji (Moduły):", configSection);
+      }
+
+      // Filtruj po zonie
+      if (configSection && Array.isArray(configSection)) {
+        const filtered = configSection.filter(item => item.zona === selectedZona);
+        console.log(`Elementy dla zony ${selectedZona}:`, filtered);
+
+        // Sprawdź, jakie rzędy są dostępne
+        const availableRows = filtered.map(item => item.rzad).filter(Boolean);
+        console.log("Dostępne rzędy:", availableRows);
+      }
+
+      console.groupEnd();
+    }
+  }, [selectedMainActivity, selectedSubActivity, selectedZona, selectedRow, activityConfig]);
 
   // Renderowanie komponentu
   return (
@@ -851,6 +940,16 @@ const ActivitiesSelector = ({
                 </div>
               </div>
 
+              {/* Dodaj pole numeru stołu jeśli wybrano Moduły */}
+              {selectedMainActivity === 'Moduły' && selectedSubActivity === 'Montaż modułów' && selectedZona && selectedRow && (
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Numer stołu
+                  </label>
+                  {renderTableOptions()}
+                </div>
+              )}
+
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
                 {selectedMainActivity !== 'Zakończenie budowy' && (
                   <div>
@@ -865,12 +964,22 @@ const ActivitiesSelector = ({
                     <input
                       type="number"
                       min="1"
-                      max={maxQuantity}
+                      max={maxQuantity || undefined}
                       value={quantity}
                       onChange={(e) => setQuantity(e.target.value)}
-                      className="px-3 py-2 w-full border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
-                      disabled={isDisabled || !selectedRow}
+                      className={`px-3 py-2 w-full border rounded-md focus:outline-none focus:ring-2 ${
+                        !isQuantityValid()
+                          ? 'border-red-500 bg-red-50 focus:ring-red-500'
+                          : 'border-gray-300 focus:ring-blue-500'
+                      } disabled:bg-gray-100 disabled:text-gray-500`}
+                      disabled={isDisabled || !selectedRow || (selectedMainActivity === 'Moduły' && !selectedTable)}
+                      placeholder={maxQuantity !== null ? `Max: ${maxQuantity}` : "Ilość"}
                     />
+                    {!isQuantityValid() && (
+                      <p className="mt-1 text-xs text-red-600">
+                        Maksymalna dozwolona ilość to {maxQuantity}
+                      </p>
+                    )}
                   </div>
                 )}
                 <div className="sm:col-span-2">
@@ -882,7 +991,7 @@ const ActivitiesSelector = ({
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
                     className="px-3 py-2 w-full border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
-                    disabled={isDisabled || !selectedRow}
+                    disabled={isDisabled || !selectedRow || (selectedMainActivity === 'Moduły' && !selectedTable)}
                     placeholder="Dodatkowe informacje..."
                   />
                 </div>
@@ -898,7 +1007,9 @@ const ActivitiesSelector = ({
                             !selectedSubActivity ||
                             !selectedZona ||
                             !selectedRow ||
-                            (selectedMainActivity !== 'Zakończenie budowy' && !quantity)}
+                            (selectedMainActivity === 'Moduły' && !selectedTable) ||
+                            (selectedMainActivity !== 'Zakończenie budowy' && !quantity) ||
+                            !isQuantityValid()}
                 >
                   <Plus size={18} className="mr-1" />
                   Dodaj aktywność
@@ -920,6 +1031,7 @@ const ActivitiesSelector = ({
                     <p className="font-medium">{activity.activity_type} - {activity.sub_activity}</p>
                     <p className="text-sm text-gray-600">
                       Zona: {activity.zona}, Rząd: {activity.row}
+                      {activity.table && <>, Stół: {activity.table}</>}
                       {activity.activity_type !== 'Zakończenie budowy' && (
                         <>, Ilość: {activity.quantity} {activity.unit}</>
                       )}
@@ -988,11 +1100,3 @@ const ActivitiesSelector = ({
 };
 
 export default ActivitiesSelector;
-
-// Funkcja debugująca - odkomentuj w razie potrzeby
-// console.log('Config data:', activityConfig, 'Selected values:', {
-//   main: selectedMainActivity,
-//   sub: selectedSubActivity,
-//   zona: selectedZona,
-//   row: selectedRow
-// });

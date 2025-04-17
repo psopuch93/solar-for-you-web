@@ -88,6 +88,17 @@ const ProgressReportPage = () => {
       }
     }, [reportData]);
 
+    const clearAllReportData = () => {
+      setReportData(null);
+      setReportStatus(null);
+      setIsEditingDraft(false);
+      setWorkEntries([]);
+      setSelectedEmployeeIds([]);
+      // Explicite resetujemy aktywności - to jest kluczowe
+      setReportActivities([]);
+      setImages([]);
+      setTempImages([]);
+    };
   // Pobieranie wszystkich potrzebnych danych
   const fetchData = async () => {
     setLoading(true);
@@ -265,6 +276,12 @@ const ProgressReportPage = () => {
 
   const fetchReportActivities = async (reportId) => {
       try {
+        if (!reportId) {
+          console.log('Brak ID raportu - czyszczę aktywności');
+          setReportActivities([]);
+          return;
+        }
+
         const response = await fetch(`/api/progress-report-activities/?report_id=${reportId}`, {
           credentials: 'same-origin',
         });
@@ -288,71 +305,80 @@ const ProgressReportPage = () => {
     setReportActivities(activities);
   };
 
-  // Pobierz raport dla wybranej daty
-  const fetchReportForDate = async () => {
-    if (!userProject || !userProject.id || !reportDate) return;
+      // Pobierz raport dla wybranej daty
+    const fetchReportForDate = async () => {
+  if (!userProject || !userProject.id || !reportDate) return;
 
-    try {
-      const response = await fetch(`/api/progress-reports/?date=${reportDate}`, {
-        credentials: 'same-origin',
-      });
+  try {
+    const response = await fetch(`/api/progress-reports/?date=${reportDate}`, {
+      credentials: 'same-origin',
+    });
 
-      if (!response.ok) {
-        throw new Error('Nie udało się pobrać raportu');
-      }
+    if (!response.ok) {
+      throw new Error('Nie udało się pobrać raportu');
+    }
 
-      const data = await response.json();
+    const data = await response.json();
 
-      // Filtruj raporty tylko dla wybranej daty
-      const reportsForDate = data.filter(report => report.date === reportDate);
+    // Filtruj raporty tylko dla wybranej daty i projektu
+    const reportsForDate = data.filter(
+      report => report.date === reportDate && report.project === userProject.id
+    );
 
-      // Ustaw dane raportu jeśli istnieje, lub null jeśli nie ma raportu na tę datę
-      if (reportsForDate && reportsForDate.length > 0) {
-        const report = reportsForDate[0]; // Zakładamy, że dla danej daty jest tylko jeden raport
-        setReportData(report);
+    // Ustaw dane raportu jeśli istnieje, lub null jeśli nie ma raportu na tę datę
+    if (reportsForDate && reportsForDate.length > 0) {
+      const report = reportsForDate[0]; // Zakładamy, że dla danej daty jest tylko jeden raport
+      setReportData(report);
+      setReportStatus(report.is_draft ? 'draft' : 'submitted');
 
-        // Określ status raportu (wersja robocza czy finalna)
-        setReportStatus(report.is_draft ? 'draft' : 'submitted');
+      // Jeśli raport ma wpisy, załaduj je do stanu
+      if (report.entries && report.entries.length > 0) {
+        const mappedEntries = report.entries.map(entry => {
+          const brigadeMember = brigadeMembers.find(member => member.employee === entry.employee);
+          const employeeName = brigadeMember ? brigadeMember.employee_name : entry.employee_name || `Employee ID: ${entry.employee}`;
 
-        // Jeśli raport ma wpisy, załaduj je do stanu
-        if (report.entries && report.entries.length > 0) {
-          // Use only report entries instead of mapping through all brigade members
-          const mappedEntries = report.entries.map(entry => {
-            const brigadeMember = brigadeMembers.find(member => member.employee === entry.employee);
-            const employeeName = brigadeMember ? brigadeMember.employee_name : entry.employee_name || `Employee ID: ${entry.employee}`;
+          return {
+            employeeId: entry.employee,
+            employeeName: employeeName,
+            hoursWorked: entry.hours_worked.toString(),
+            notes: entry.notes || ''
+          };
+        });
 
-            return {
-              employeeId: entry.employee,
-              employeeName: employeeName,
-              hoursWorked: entry.hours_worked.toString(),
-              notes: entry.notes || ''
-            };
-          });
-
-          setWorkEntries(mappedEntries);
-
-          // Set the selected employee IDs based on the entries in the report
-          const employeeIds = report.entries.map(entry => entry.employee);
-          setSelectedEmployeeIds(employeeIds);
-        } else {
-          setWorkEntries([]);
-          setSelectedEmployeeIds([]);
-        }
+        setWorkEntries(mappedEntries);
+        const employeeIds = report.entries.map(entry => entry.employee);
+        setSelectedEmployeeIds(employeeIds);
       } else {
-        setReportData(null);
-        setReportStatus(null);
-        setIsEditingDraft(false);
         setWorkEntries([]);
         setSelectedEmployeeIds([]);
       }
-    } catch (err) {
-      console.error('Error fetching report:', err);
+
+      // Pobierz zdjęcia i aktywności dla tego konkretnego raportu
+      if (report.id) {
+        fetchReportImages(report.id);
+        fetchReportActivities(report.id);
+      }
+    } else {
+      // Nie znaleziono raportu dla tej daty
       setReportData(null);
       setReportStatus(null);
+      setIsEditingDraft(false);
       setWorkEntries([]);
       setSelectedEmployeeIds([]);
+      setReportActivities([]); // Wyczyść aktywności
+      setImages([]); // Wyczyść zdjęcia
     }
-  };
+  } catch (err) {
+    console.error('Error fetching report:', err);
+    // W przypadku błędu również wyczyść dane
+    setReportData(null);
+    setReportStatus(null);
+    setWorkEntries([]);
+    setSelectedEmployeeIds([]);
+    setReportActivities([]);
+    setImages([]);
+  }
+};
 
   // Pobierz zdjęcia dla raportu
   // Poprawiona funkcja fetchReportImages
@@ -666,107 +692,141 @@ const ProgressReportPage = () => {
     await saveReport(false);
   };
 
-  // Wspólna funkcja do zapisywania raportu
   const saveReport = async (isDraft) => {
-    // Sprawdź czy użytkownik ma przypisany projekt
-    if (!userProject) {
+      // Sprawdź czy użytkownik ma przypisany projekt
+      if (!userProject) {
         setError("Nie możesz złożyć raportu bez przypisanego projektu. Przejdź do sekcji 'Brygada' aby przypisać projekt.");
         return;
-  }
+      }
 
-    // Sprawdź czy są wybrani pracownicy
-    if (workEntries.length === 0) {
-      setError("Nie wybrano żadnych pracowników do raportu. Wybierz pracowników, którzy pracowali w tym dniu.");
-      return;
-    }
-
-    // Walidacja danych - tylko dla finalnego raportu
-    if (!isDraft) {
-      const invalidEntries = workEntries.filter(
-        entry => entry.hoursWorked !== '' && (isNaN(parseFloat(entry.hoursWorked)) || parseFloat(entry.hoursWorked) < 0 || parseFloat(entry.hoursWorked) > 24)
-      );
-
-      if (invalidEntries.length > 0) {
-        setError("Liczba godzin musi być wartością od 0 do 24 dla wszystkich pracowników.");
+      // Sprawdź czy są wybrani pracownicy
+      if (workEntries.length === 0) {
+        setError("Nie wybrano żadnych pracowników do raportu. Wybierz pracowników, którzy pracowali w tym dniu.");
         return;
       }
 
-      // Sprawdź czy wszystkie godziny są uzupełnione przy finalnym raporcie
-      const emptyHoursEntries = workEntries.filter(entry => entry.hoursWorked === '');
-      if (emptyHoursEntries.length > 0) {
-        if (!window.confirm('Niektórzy pracownicy nie mają uzupełnionych godzin pracy. Czy na pewno chcesz zapisać raport jako finalny?')) {
+      // Walidacja danych - tylko dla finalnego raportu
+      if (!isDraft) {
+        const invalidEntries = workEntries.filter(
+          entry => entry.hoursWorked !== '' && (isNaN(parseFloat(entry.hoursWorked)) || parseFloat(entry.hoursWorked) < 0 || parseFloat(entry.hoursWorked) > 24)
+        );
+
+        if (invalidEntries.length > 0) {
+          setError("Liczba godzin musi być wartością od 0 do 24 dla wszystkich pracowników.");
           return;
         }
-      }
-    }
 
-    try {
-      setSubmitting(true);
-
-      // Przygotuj dane do wysłania
-      const reportDataToSend = {
-        date: reportDate,
-        project: userProject.id,
-        is_draft: isDraft, // Dodajemy flagę wersji roboczej
-        entries: workEntries.map(entry => ({
-          employee: entry.employeeId,
-          hours_worked: entry.hoursWorked === '' ? 0 : parseFloat(entry.hoursWorked),
-          notes: entry.notes
-        }))
-      };
-
-      // Określ URL i metodę w zależności od tego, czy edytujemy istniejący raport
-      let url = '/api/create-progress-report/';
-      let method = 'POST';
-
-      if (isEditingDraft && reportData && reportData.id) {
-        url = `/api/progress-reports/${reportData.id}/`;
-        method = 'PATCH';
+        // Sprawdź czy wszystkie godziny są uzupełnione przy finalnym raporcie
+        const emptyHoursEntries = workEntries.filter(entry => entry.hoursWorked === '');
+        if (emptyHoursEntries.length > 0) {
+          if (!window.confirm('Niektórzy pracownicy nie mają uzupełnionych godzin pracy. Czy na pewno chcesz zapisać raport jako finalny?')) {
+            return;
+          }
+        }
       }
 
-      // Wyślij dane do API
-      const response = await fetch(url, {
-        method: method,
-        headers: {
-          'Content-Type': 'application/json',
-          'X-CSRFToken': getCsrfToken(),
-        },
-        body: JSON.stringify(reportDataToSend),
-        credentials: 'same-origin',
-      });
+      try {
+        setSubmitting(true);
 
-      if (!response.ok) {
-        throw new Error(isDraft ? 'Nie udało się zapisać wersji roboczej' : 'Nie udało się zapisać raportu');
+        // Przygotuj dane do wysłania
+        const reportDataToSend = {
+          date: reportDate,
+          project: userProject.id,
+          is_draft: isDraft, // Dodajemy flagę wersji roboczej
+          entries: workEntries.map(entry => ({
+            employee: entry.employeeId,
+            hours_worked: entry.hoursWorked === '' ? 0 : parseFloat(entry.hoursWorked),
+            notes: entry.notes
+          }))
+        };
+
+        // Określ URL i metodę w zależności od tego, czy edytujemy istniejący raport
+        let url = '/api/create-progress-report/';
+        let method = 'POST';
+
+        if (isEditingDraft && reportData && reportData.id) {
+          url = `/api/progress-reports/${reportData.id}/`;
+          method = 'PATCH';
+        }
+
+        // Wyślij dane do API
+        const response = await fetch(url, {
+          method: method,
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken(),
+          },
+          body: JSON.stringify(reportDataToSend),
+          credentials: 'same-origin',
+        });
+
+        if (!response.ok) {
+          throw new Error(isDraft ? 'Nie udało się zapisać wersji roboczej' : 'Nie udało się zapisać raportu');
+        }
+
+        const savedReport = await response.json();
+        setReportData(savedReport);
+        setReportStatus(isDraft ? 'draft' : 'submitted');
+        setIsEditingDraft(false);
+
+        // Prześlij tymczasowe zdjęcia, jeśli istnieją
+        if (savedReport && savedReport.id && tempImages.length > 0) {
+          await uploadTempImagesToReport(savedReport.id);
+        }
+
+        // NOWY KOD: Automatycznie zapisz aktywności, jeśli są
+        if (savedReport && savedReport.id && reportActivities.length > 0) {
+          try {
+            const activitiesResponse = await fetch('/api/add-activities-to-report/', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCsrfToken(),
+              },
+              credentials: 'same-origin',
+              body: JSON.stringify({
+                report_id: savedReport.id,
+                activities: reportActivities.map(activity => ({
+                  activity_type: activity.activity_type,
+                  sub_activity: activity.sub_activity,
+                  zona: activity.zona,
+                  row: activity.row,
+                  quantity: activity.quantity,
+                  unit: activity.unit,
+                  notes: activity.notes
+                }))
+              }),
+            });
+
+            if (!activitiesResponse.ok) {
+              console.error('Nie udało się zapisać aktywności automatycznie');
+            } else {
+              // Odśwież aktywności po zapisie
+              fetchReportActivities(savedReport.id);
+            }
+          } catch (err) {
+            console.error('Błąd podczas zapisywania aktywności:', err);
+          }
+        }
+
+        // Pokaż odpowiednie powiadomienie
+        showNotification(isDraft ? "Wersja robocza została zapisana" : "Raport został pomyślnie zapisany", "success");
+
+        // Odśwież daty raportów
+        fetchReportDates();
+
+        // Załaduj zdjęcia dla nowego raportu
+        if (savedReport && savedReport.id) {
+          fetchReportImages(savedReport.id);
+        }
+
+      } catch (err) {
+        console.error('Error submitting report:', err);
+        setError(err.message || (isDraft ? 'Wystąpił błąd podczas zapisywania wersji roboczej' : 'Wystąpił błąd podczas zapisywania raportu'));
+      } finally {
+        setSubmitting(false);
       }
-
-      const savedReport = await response.json();
-      setReportData(savedReport);
-      setReportStatus(isDraft ? 'draft' : 'submitted');
-      setIsEditingDraft(false);
-
-      // Prześlij tymczasowe zdjęcia, jeśli istnieją
-      if (savedReport && savedReport.id && tempImages.length > 0) {
-        await uploadTempImagesToReport(savedReport.id);
-      }
-
-      // Pokaż odpowiednie powiadomienie
-      showNotification(isDraft ? "Wersja robocza została zapisana" : "Raport został pomyślnie zapisany", "success");
-
-      // Odśwież daty raportów
-      fetchReportDates();
-
-      // Załaduj zdjęcia dla nowego raportu
-      if (savedReport && savedReport.id) {
-        fetchReportImages(savedReport.id);
-      }
-
-    } catch (err) {
-      console.error('Error submitting report:', err);
-      setError(err.message || (isDraft ? 'Wystąpił błąd podczas zapisywania wersji roboczej' : 'Wystąpił błąd podczas zapisywania raportu'));
-    } finally {
-      setSubmitting(false);
-    }
-  };
+    };
 
   // Oryginalna funkcja handleSubmit - modyfikujemy, aby wywołać saveReport
   const handleSubmit = async (e) => {
@@ -943,188 +1003,147 @@ const ProgressReportPage = () => {
 
       {/* Formularz raportu */}
       {userProject && brigadeMembers.length > 0 && (
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <form onSubmit={handleSubmit}>
-            <div className="flex items-center justify-between mb-6">
+          <div className="mb-6">
+            <div className="flex justify-between items-center mb-4">
               <h2 className="text-lg font-medium text-gray-700 flex items-center">
-                <Calendar className="mr-2" size={20} />
-                Raport za dzień
+                <CheckSquare className="mr-2" size={20} />
+                Aktywności projektowe
               </h2>
-              <div className="flex items-center">
-                <input
-                  type="date"
-                  value={reportDate}
-                  onChange={(e) => setReportDate(e.target.value)}
-                  className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  max={new Date().toISOString().split('T')[0]} // Maksymalna data to dzisiaj
-                />
-              </div>
+              <button
+                type="button"
+                onClick={() => setShowActivitiesSection(!showActivitiesSection)}
+                className="text-blue-600 hover:text-blue-800 flex items-center"
+              >
+                {showActivitiesSection ? 'Ukryj' : 'Pokaż'}
+              </button>
             </div>
 
-            {/* Employee Selection Section */}
-            <div className="mb-6">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-md font-medium text-gray-700 flex items-center">
-                  <Users className="mr-2" size={18} />
-                  Wybierz pracowników
-                </h3>
-                <button
-                  type="button"
-                  className="text-blue-600 hover:text-blue-800 flex items-center"
-                  onClick={() => setShowEmployeeSelector(!showEmployeeSelector)}
-                  disabled={isFormDisabled}
-                >
-                  {showEmployeeSelector ? 'Ukryj listę' : 'Pokaż listę'}
-                  {showEmployeeSelector ? <X size={16} className="ml-1" /> : <UserPlus size={16} className="ml-1" />}
-                </button>
-              </div>
+            {showActivitiesSection && (
+              <ActivitiesSelector
+                key={reportData?.id || 'new-report-' + reportDate} // Dodaj unikalny klucz
+                projectId={userProject.id}
+                reportId={reportData?.id}
+                isDisabled={reportStatus === 'submitted' || (reportStatus === 'draft' && !isEditingDraft)}
+                onActivitiesChange={handleActivitiesChange}
+                existingActivities={reportActivities}
+                onSaveComplete={(reportId) => fetchReportActivities(reportId)}
+              />
+            )}
+          </div>
+        )}
 
-              {showEmployeeSelector && (
-                <div className="bg-gray-50 p-4 rounded-lg mb-6">
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                    {brigadeMembers.map(member => (
-                      <div
-                        key={member.employee}
-                        className={`p-3 border rounded-lg flex items-center cursor-pointer ${
-                          selectedEmployeeIds.includes(member.employee) ? 'border-blue-500 bg-blue-50' : 'border-gray-200'
-                        }`}
-                        onClick={() => !isFormDisabled && handleEmployeeSelection(member.employee)}
-                      >
-                        {selectedEmployeeIds.includes(member.employee) ?
-                          <CheckSquare className="text-blue-500 mr-2" size={20} /> :
-                          <Square className="text-gray-300 mr-2" size={20} />
-                        }
-                        <span>{member.employee_name}</span>
-                      </div>
-                    ))}
-                  </div>
+          {/* Work Entries Section */}
+          <div>
+            <h3 className="text-md font-medium text-gray-700 mb-3 flex items-center">
+              <Clock className="mr-2" size={18} />
+              {getWorkEntriesSectionTitle()}
+            </h3>
 
-                  <div className="flex justify-end mt-4">
-                    <button
-                      type="button"
-                      className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors disabled:opacity-50 flex items-center"
-                      onClick={addSelectedEmployeesToEntries}
-                      disabled={isFormDisabled || selectedEmployeeIds.length === 0}
-                    >
-                      <UserPlus size={16} className="mr-2" />
-                      Dodaj wybranych pracowników
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* Work Entries Section */}
-              <div>
-                <h3 className="text-md font-medium text-gray-700 mb-3 flex items-center">
-                  <Clock className="mr-2" size={18} />
-                  {getWorkEntriesSectionTitle()}
-                </h3>
-
-                <div className="bg-gray-50 p-4 rounded-lg">
-                  {workEntries.length === 0 ? (
-                    <div className="text-center py-8 bg-gray-100 rounded-lg">
-                      <UserPlus className="mx-auto text-gray-400 mb-2" size={24} />
-                      <p className="text-gray-500">Nie wybrano żadnych pracowników</p>
-                      <button
-                        type="button"
-                        onClick={() => setShowEmployeeSelector(true)}
-                        className="mt-3 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
-                        disabled={isFormDisabled}
-                      >
-                        Wybierz pracowników
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="space-y-4">
-                      {workEntries.map((entry) => (
-                        <div key={entry.employeeId} className="grid grid-cols-1 md:grid-cols-10 gap-4 items-center bg-white p-4 rounded-lg border border-gray-200">
-                          <div className="md:col-span-3">
-                            <p className="font-medium">{entry.employeeName}</p>
-                          </div>
-                          <div className="md:col-span-3">
-                            <label className="block text-sm font-medium text-gray-700 mb-1">
-                              Przepracowane godziny
-                            </label>
-                            <div className="relative">
-                              <input
-                                type="number"
-                                min="0"
-                                max="24"
-                                step="0.5"
-                                value={entry.hoursWorked}
-                                onChange={(e) => handleHoursChange(entry.employeeId, e.target.value)}
-                                className="pl-9 pr-4 py-2 w-full border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                placeholder="0"
-                                disabled={isFormDisabled}
-                              />
-                              <Clock className="absolute left-3 top-2.5 text-gray-400" size={18} />
-                            </div>
-                          </div>
-                          <div className="md:col-span-3">
-                            <label className="block text-sm font-medium text-gray-700 mb-1">
-                              Notatki (opcjonalnie)
-                            </label>
-                            <input
-                              type="text"
-                              value={entry.notes}
-                              onChange={(e) => handleNotesChange(entry.employeeId, e.target.value)}
-                              className="px-4 py-2 w-full border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                              placeholder="Dodatkowe informacje"
-                              disabled={isFormDisabled}
-                            />
-                          </div>
-                          <div className="md:col-span-1 flex justify-end items-center">
-                            {!isFormDisabled && (
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveEmployee(entry.employeeId)}
-                                className="text-red-500 hover:text-red-700 p-2"
-                                title="Usuń pracownika"
-                              >
-                                <Trash2 size={18} />
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Przyciski do zapisywania - przeniesione na sam dół */}
-            <div className="flex justify-end space-x-4">
-              {reportStatus !== 'submitted' && (
-                <>
+            <div className="bg-gray-50 p-4 rounded-lg">
+              {workEntries.length === 0 ? (
+                <div className="text-center py-8 bg-gray-100 rounded-lg">
+                  <UserPlus className="mx-auto text-gray-400 mb-2" size={24} />
+                  <p className="text-gray-500">Nie wybrano żadnych pracowników</p>
                   <button
                     type="button"
-                    onClick={saveAsDraft}
-                    disabled={submitting || workEntries.length === 0 || isFormDisabled}
-                    className="flex items-center px-6 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors disabled:opacity-50"
+                    onClick={() => setShowEmployeeSelector(true)}
+                    className="mt-3 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+                    disabled={isFormDisabled}
                   >
-                    {submitting ? (
-                      <div className="mr-2 h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                    ) : (
-                      <FileText className="mr-2" size={18} />
-                    )}
-                    Zapisz roboczy
+                    Wybierz pracowników
                   </button>
-
-                  <button
-                    type="submit"
-                    disabled={submitting || workEntries.length === 0 || isFormDisabled}
-                    className="flex items-center px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
-                  >
-                    {submitting ? (
-                      <div className="mr-2 h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                    ) : (
-                      <Save className="mr-2" size={18} />
-                    )}
-                    Zapisz raport
-                  </button>
-                </>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {workEntries.map((entry) => (
+                    <div key={entry.employeeId} className="grid grid-cols-1 md:grid-cols-10 gap-4 items-center bg-white p-4 rounded-lg border border-gray-200">
+                      <div className="md:col-span-3">
+                        <p className="font-medium">{entry.employeeName}</p>
+                      </div>
+                      <div className="md:col-span-3">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Przepracowane godziny
+                        </label>
+                        <div className="relative">
+                          <input
+                            type="number"
+                            min="0"
+                            max="24"
+                            step="0.5"
+                            value={entry.hoursWorked}
+                            onChange={(e) => handleHoursChange(entry.employeeId, e.target.value)}
+                            className="pl-9 pr-4 py-2 w-full border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            placeholder="0"
+                            disabled={isFormDisabled}
+                          />
+                          <Clock className="absolute left-3 top-2.5 text-gray-400" size={18} />
+                        </div>
+                      </div>
+                      <div className="md:col-span-3">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Notatki (opcjonalnie)
+                        </label>
+                        <input
+                          type="text"
+                          value={entry.notes}
+                          onChange={(e) => handleNotesChange(entry.employeeId, e.target.value)}
+                          className="px-4 py-2 w-full border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          placeholder="Dodatkowe informacje"
+                          disabled={isFormDisabled}
+                        />
+                      </div>
+                      <div className="md:col-span-1 flex justify-end items-center">
+                        {!isFormDisabled && (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveEmployee(entry.employeeId)}
+                            className="text-red-500 hover:text-red-700 p-2"
+                            title="Usuń pracownika"
+                          >
+                            <Trash2 size={18} />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               )}
+            </div>
+          </div>
+        </div>
+
+        /* Przyciski do zapisywania - przeniesione na sam dół */
+        <div className="flex justify-end space-x-4">
+          {reportStatus !== 'submitted' && (
+            <>
+              <button
+                type="button"
+                onClick={saveAsDraft}
+                disabled={submitting || workEntries.length === 0 || isFormDisabled}
+                className="flex items-center px-6 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors disabled:opacity-50"
+              >
+                {submitting ? (
+                  <div className="mr-2 h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                ) : (
+                  <FileText className="mr-2" size={18} />
+                )}
+                Zapisz roboczy
+              </button>
+
+              <button
+                type="submit"
+                disabled={submitting || workEntries.length === 0 || isFormDisabled}
+                className="flex items-center px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
+              >
+                {submitting ? (
+                  <div className="mr-2 h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                ) : (
+                  <Save className="mr-2" size={18} />
+                )}
+                Zapisz raport
+              </button>
+            </>
+          )}
             </div>
           </form>
         </div>
