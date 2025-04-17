@@ -19,7 +19,8 @@ from .serializers import (
     ItemSerializer, RequisitionSerializer, RequisitionItemSerializer, QuarterSerializer, QuarterImageSerializer,
     UserSettingsSerializer, BrigadeMemberSerializer, ProgressReportSerializer,
     ProgressReport, ProgressReportEntrySerializer, ProgressReportEntry, ProgressReportImageSerializer,
-    ProgressReportImage, HRRequisitionPositionSerializer, HRRequisitionSerializer, TransportRequestSerializer, TransportItemSerializer
+    ProgressReportImage, HRRequisitionPositionSerializer, HRRequisitionSerializer, TransportRequestSerializer, TransportItemSerializer,
+    ProgressReportActivitySerializer, ProjectActivityConfig, ProgressReportActivity, ProjectActivityConfigSerializer
 )
 
 class IsAdminOrOwner(permissions.BasePermission):
@@ -1494,3 +1495,152 @@ def validate_transport(request):
         return Response({'valid': False, 'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
 
     return Response({'valid': True}, status=status.HTTP_200_OK)
+
+class ProjectActivityConfigViewSet(viewsets.ModelViewSet):
+    """API endpoint dla konfiguracji aktywności projektu"""
+    queryset = ProjectActivityConfig.objects.all()
+    serializer_class = ProjectActivityConfigSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        """Filtrowanie konfiguracji aktywności"""
+        project_id = self.request.query_params.get('project_id', None)
+        if project_id:
+            return ProjectActivityConfig.objects.filter(project_id=project_id)
+        return ProjectActivityConfig.objects.all()
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user, updated_by=self.request.user)
+
+    def perform_update(self, serializer):
+        serializer.save(updated_by=self.request.user)
+
+class ProgressReportActivityViewSet(viewsets.ModelViewSet):
+    """API endpoint dla aktywności w raportach postępu"""
+    queryset = ProgressReportActivity.objects.all()
+    serializer_class = ProgressReportActivitySerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        """Filtrowanie aktywności po raporcie"""
+        report_id = self.request.query_params.get('report_id', None)
+        if report_id:
+            return ProgressReportActivity.objects.filter(report_id=report_id)
+        return ProgressReportActivity.objects.all()
+
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def get_project_activities_config(request):
+    """Pobranie konfiguracji aktywności dla projektu"""
+    project_id = request.query_params.get('project_id', None)
+
+    if not project_id:
+        return Response(
+            {'detail': 'Identyfikator projektu jest wymagany'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    try:
+        # Pobierz konfigurację z bazy danych
+        config = ProjectActivityConfig.objects.filter(project_id=project_id).first()
+
+        if config:
+            serializer = ProjectActivityConfigSerializer(config)
+            return Response(serializer.data)
+
+        # Jeśli nie znaleziono konfiguracji, zwróć pustą odpowiedź
+        return Response({
+            'project': project_id,
+            'config_data': None
+        })
+
+    except Exception as e:
+        return Response(
+            {'detail': str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+def upload_project_activities_config(request):
+    """Wgranie konfiguracji aktywności dla projektu"""
+    project_id = request.data.get('project_id')
+    config_file = request.FILES.get('config_file')
+
+    if not project_id or not config_file:
+        return Response(
+            {'detail': 'Identyfikator projektu i plik konfiguracyjny są wymagane'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    try:
+        # Sprawdź czy projekt istnieje
+        try:
+            project = Project.objects.get(id=project_id)
+        except Project.DoesNotExist:
+            return Response(
+                {'detail': 'Projekt nie istnieje'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Wczytaj plik JSON
+        try:
+            json_data = json.load(config_file)
+        except json.JSONDecodeError:
+            return Response(
+                {'detail': 'Nieprawidłowy format pliku JSON'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Utwórz lub zaktualizuj konfigurację
+        config, created = ProjectActivityConfig.objects.update_or_create(
+            project=project,
+            defaults={
+                'config_data': json_data,
+                'created_by': request.user if created else None,
+                'updated_by': request.user
+            }
+        )
+
+        serializer = ProjectActivityConfigSerializer(config)
+        return Response(serializer.data)
+
+    except Exception as e:
+        return Response(
+            {'detail': str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+def add_activities_to_report(request):
+    """Endpoint do dodawania aktywności do raportu postępu"""
+    try:
+        report_id = request.data.get('report_id')
+        activities_data = request.data.get('activities', [])
+
+        if not report_id:
+            return Response({'detail': 'Brak ID raportu'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Pobierz raport
+        try:
+            report = ProgressReport.objects.get(id=report_id)
+        except ProgressReport.DoesNotExist:
+            return Response({'detail': 'Raport nie istnieje'}, status=status.HTTP_404_NOT_FOUND)
+
+        # Usuń istniejące aktywności dla tego raportu
+        ProgressReportActivity.objects.filter(report=report).delete()
+
+        # Dodaj nowe aktywności
+        for activity_data in activities_data:
+            activity_data['report'] = report_id
+            serializer = ProgressReportActivitySerializer(data=activity_data)
+            if serializer.is_valid():
+                serializer.save()
+            else:
+                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response({'detail': 'Aktywności zapisane pomyślnie'}, status=status.HTTP_201_CREATED)
+
+    except Exception as e:
+        return Response({'detail': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

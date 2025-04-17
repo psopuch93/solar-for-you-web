@@ -8,7 +8,8 @@ const ActivitiesSelector = ({
   reportId,
   isDisabled = false,
   onActivitiesChange,
-  existingActivities = []
+  existingActivities = [],
+  onSaveComplete  // Nowy prop do obsługi callbacku po zapisaniu aktywności
 }) => {
   const [activities, setActivities] = useState(existingActivities.length > 0 ? existingActivities : []);
   const [activityConfig, setActivityConfig] = useState(null);
@@ -23,6 +24,10 @@ const ActivitiesSelector = ({
   const [unit, setUnit] = useState('');
   const [notes, setNotes] = useState('');
   const [showHelp, setShowHelp] = useState(false);
+  // Nowy stan - określa czy pokazujemy formularz dodawania czy listę aktywności
+  const [showAddForm, setShowAddForm] = useState(false);
+  // Stan do śledzenia procesu zapisu
+  const [saving, setSaving] = useState(false);
 
   // Pobranie konfiguracji aktywności dla projektu
   useEffect(() => {
@@ -58,6 +63,13 @@ const ActivitiesSelector = ({
 
     fetchActivityConfig();
   }, [projectId]);
+
+  // Aktualizacja stanu aktywności przy zmianie propa existingActivities
+  useEffect(() => {
+    if (existingActivities && existingActivities.length > 0) {
+      setActivities(existingActivities);
+    }
+  }, [existingActivities]);
 
   // Po zmianie głównej aktywności, zresetuj pozostałe pola
   useEffect(() => {
@@ -217,15 +229,19 @@ const ActivitiesSelector = ({
       notes: notes
     };
 
-    setActivities([...activities, newActivity]);
+    setActivities(prev => [...prev, newActivity]);
     setError(null);
 
     // Zresetuj formularz
+    setSelectedMainActivity('');
     setSelectedSubActivity('');
     setSelectedZona('');
     setSelectedRow('');
     setQuantity('');
     setNotes('');
+
+    // Ukryj formularz dodawania po dodaniu aktywności
+    setShowAddForm(false);
   };
 
   // Usuń aktywność
@@ -238,6 +254,12 @@ const ActivitiesSelector = ({
     if (!reportId || activities.length === 0) return;
 
     try {
+      setSaving(true);
+      setError(null);
+
+      console.log('Zapisuję aktywności:', activities);
+      console.log('Do raportu o ID:', reportId);
+
       const response = await fetch('/api/add-activities-to-report/', {
         method: 'POST',
         headers: {
@@ -259,19 +281,28 @@ const ActivitiesSelector = ({
         }),
       });
 
+      const data = await response.json();
+      console.log('Odpowiedź z serwera:', data);
+
       if (!response.ok) {
-        throw new Error('Nie udało się zapisać aktywności');
+        throw new Error(data.detail || 'Nie udało się zapisać aktywności');
       }
 
-      // Wyczyść listę aktywności po zapisie
-      setActivities([]);
-      setError(null);
+      // Sukces - uruchom callback odświeżania jeśli został przekazany
+      if (typeof onSaveComplete === 'function') {
+        console.log('Wywołuję callback onSaveComplete z reportId:', reportId);
+        onSaveComplete(reportId);
+      } else {
+        console.log('Brak callbacku onSaveComplete, zmieniam tylko lokalny stan');
+      }
 
-      // Można dodać komunikat o sukcesie
+      // Pokaż komunikat o sukcesie
       alert('Aktywności zostały zapisane pomyślnie');
     } catch (err) {
       console.error('Błąd zapisywania aktywności:', err);
-      setError('Wystąpił błąd podczas zapisywania aktywności');
+      setError(err.message || 'Wystąpił błąd podczas zapisywania aktywności');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -420,17 +451,26 @@ const ActivitiesSelector = ({
     if (!activityConfig || !selectedMainActivity || !selectedSubActivity) return null;
 
     let zonas = [];
-    let configSection;
+    let configSection = null;
 
+    // Pobierz odpowiednią sekcję z konfiguracji
     if (selectedMainActivity === 'Logistyka') {
       configSection = activityConfig.logistyka;
     } else if (selectedMainActivity === 'Konstrukcja') {
       if (activityConfig.konstrukcja) {
-        const constructionTypes = Object.keys(activityConfig.konstrukcja);
-        for (const type of constructionTypes) {
-          configSection = activityConfig.konstrukcja[type];
-          if (configSection) break;
-        }
+        // Pobierz wszystkie typy konstrukcji i zbierz z nich zony
+        const zonaSet = new Set();
+
+        Object.keys(activityConfig.konstrukcja).forEach(type => {
+          const sectionData = activityConfig.konstrukcja[type];
+          if (Array.isArray(sectionData)) {
+            sectionData.forEach(item => {
+              if (item.zona) zonaSet.add(item.zona);
+            });
+          }
+        });
+
+        zonas = Array.from(zonaSet);
       }
     } else if (selectedMainActivity === 'Moduły') {
       configSection = activityConfig.moduly;
@@ -438,31 +478,43 @@ const ActivitiesSelector = ({
       // Dla zakończenia budowy można ręcznie stworzyć listę zon z innych aktywności
       const zonaSet = new Set();
 
-      if (activityConfig.logistyka) {
-        activityConfig.logistyka.forEach(item => zonaSet.add(item.zona));
+      if (activityConfig.logistyka && Array.isArray(activityConfig.logistyka)) {
+        activityConfig.logistyka.forEach(item => {
+          if (item.zona) zonaSet.add(item.zona);
+        });
       }
 
       if (activityConfig.konstrukcja) {
         Object.values(activityConfig.konstrukcja).forEach(items => {
-          items.forEach(item => zonaSet.add(item.zona));
+          if (Array.isArray(items)) {
+            items.forEach(item => {
+              if (item.zona) zonaSet.add(item.zona);
+            });
+          }
         });
       }
 
-      if (activityConfig.moduly) {
-        activityConfig.moduly.forEach(item => zonaSet.add(item.zona));
+      if (activityConfig.moduly && Array.isArray(activityConfig.moduly)) {
+        activityConfig.moduly.forEach(item => {
+          if (item.zona) zonaSet.add(item.zona);
+        });
       }
 
       zonas = Array.from(zonaSet);
     }
 
-    if (configSection) {
+    // Dla innych aktywności (Logistyka, Moduły) - używamy configSection
+    if (configSection && Array.isArray(configSection) && zonas.length === 0) {
       // Zbierz unikalne zony
       const zonaSet = new Set();
       configSection.forEach(item => {
-        zonaSet.add(item.zona);
+        if (item.zona) zonaSet.add(item.zona);
       });
       zonas = Array.from(zonaSet);
     }
+
+    // Sortowanie zon, aby były wyświetlane w logicznej kolejności
+    zonas.sort();
 
     return (
       <select
@@ -480,127 +532,165 @@ const ActivitiesSelector = ({
   };
 
   // Renderowanie opcji dla rzędów
-    const renderRowOptions = () => {
-      if (!activityConfig || !selectedMainActivity || !selectedSubActivity || !selectedZona) return null;
+  const renderRowOptions = () => {
+    if (!activityConfig || !selectedMainActivity || !selectedSubActivity || !selectedZona) return null;
 
-      let rows = [];
-      let configSection = null;
+    let rows = [];
+    let configSection = null;
 
-      console.log("Debug - renderRowOptions:");
-      console.log("Activity Config:", activityConfig);
-      console.log("Selected Main Activity:", selectedMainActivity);
-      console.log("Selected Sub Activity:", selectedSubActivity);
-      console.log("Selected Zona:", selectedZona);
-
-      // Pobierz odpowiednią sekcję z konfiguracji
-      if (selectedMainActivity === 'Logistyka') {
-        configSection = activityConfig.logistyka || [];
-      } else if (selectedMainActivity === 'Konstrukcja') {
-        if (activityConfig.konstrukcja) {
-          // Pobierz pierwszy dostępny typ konstrukcji
-          const constructionTypes = Object.keys(activityConfig.konstrukcja);
-          if (constructionTypes.length > 0) {
-            configSection = activityConfig.konstrukcja[constructionTypes[0]] || [];
-          }
-        }
-      } else if (selectedMainActivity === 'Moduły') {
-        configSection = activityConfig.moduly || [];
-      }
-
-      // Dla "Zakończenie budowy" zbierz rzędy ze wszystkich sekcji dla wybranej zony
-      if (selectedMainActivity === 'Zakończenie budowy') {
-        const rowSet = new Set();
-
-        // Sprawdź sekcję logistyki
-        if (activityConfig.logistyka && Array.isArray(activityConfig.logistyka)) {
-          activityConfig.logistyka
-            .filter(item => item.zona === selectedZona)
-            .forEach(item => {
-              if (item.rzad) rowSet.add(item.rzad);
-            });
-        }
-
-        // Sprawdź sekcję konstrukcji
-        if (activityConfig.konstrukcja) {
-          Object.values(activityConfig.konstrukcja).forEach(items => {
-            if (Array.isArray(items)) {
-              items
-                .filter(item => item.zona === selectedZona)
-                .forEach(item => {
-                  if (item.rzad) rowSet.add(item.rzad);
-                });
+    // Pobierz odpowiednią sekcję z konfiguracji
+    if (selectedMainActivity === 'Logistyka') {
+      configSection = activityConfig.logistyka || [];
+    } else if (selectedMainActivity === 'Konstrukcja') {
+      if (activityConfig.konstrukcja) {
+        // Pobierz wszystkie typy konstrukcji
+        Object.keys(activityConfig.konstrukcja).forEach(type => {
+          const sectionData = activityConfig.konstrukcja[type];
+          if (Array.isArray(sectionData) && sectionData.length > 0) {
+            // Jeśli configSection jest null, ustaw go na pierwszy znaleziony
+            if (configSection === null) {
+              configSection = sectionData;
+            } else if (Array.isArray(configSection)) {
+              // W przeciwnym razie połącz dane z różnych typów konstrukcji
+              configSection = [...configSection, ...sectionData];
             }
-          });
-        }
-
-        // Sprawdź sekcję modułów
-        if (activityConfig.moduly && Array.isArray(activityConfig.moduly)) {
-          activityConfig.moduly
-            .filter(item => item.zona === selectedZona)
-            .forEach(item => {
-              if (item.rzad) rowSet.add(item.rzad);
-            });
-        }
-
-        rows = Array.from(rowSet);
-        console.log("Rows for Zakończenie budowy:", rows);
+          }
+        });
       }
-      // Dla pozostałych aktywności
-      else if (configSection && Array.isArray(configSection)) {
-        // Zbierz rzędy dla wybranej zony
-        const rowSet = new Set();
-        configSection
+    } else if (selectedMainActivity === 'Moduły') {
+      configSection = activityConfig.moduly || [];
+    }
+
+    // Dla "Zakończenie budowy" zbierz rzędy ze wszystkich sekcji dla wybranej zony
+    if (selectedMainActivity === 'Zakończenie budowy') {
+      const rowSet = new Set();
+
+      // Sprawdź sekcję logistyki
+      if (activityConfig.logistyka && Array.isArray(activityConfig.logistyka)) {
+        activityConfig.logistyka
           .filter(item => item.zona === selectedZona)
           .forEach(item => {
             if (item.rzad) rowSet.add(item.rzad);
           });
-        rows = Array.from(rowSet);
-        console.log("Rows for standard activity:", rows);
       }
 
-      // Jeśli nadal nie mamy rzędów, spróbuj pobrać je z innych sekcji
-      if (rows.length === 0) {
-        console.log("No rows found, trying to get from other sections");
-
-        // Sprawdź wszystkie dostępne sekcje
-        const sections = [];
-        if (activityConfig.logistyka) sections.push(activityConfig.logistyka);
-        if (activityConfig.moduly) sections.push(activityConfig.moduly);
-        if (activityConfig.konstrukcja) {
-          Object.values(activityConfig.konstrukcja).forEach(section => {
-            if (Array.isArray(section)) sections.push(section);
-          });
-        }
-
-        const rowSet = new Set();
-        sections.forEach(section => {
-          if (Array.isArray(section)) {
-            section
+      // Sprawdź sekcję konstrukcji
+      if (activityConfig.konstrukcja) {
+        Object.values(activityConfig.konstrukcja).forEach(items => {
+          if (Array.isArray(items)) {
+            items
               .filter(item => item.zona === selectedZona)
               .forEach(item => {
                 if (item.rzad) rowSet.add(item.rzad);
               });
           }
         });
-
-        rows = Array.from(rowSet);
-        console.log("Rows from all sections:", rows);
       }
 
-      return (
-        <select
-          value={selectedRow}
-          onChange={(e) => setSelectedRow(e.target.value)}
-          className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
-          disabled={isDisabled || !selectedZona}
-        >
-          <option value="">Wybierz rząd</option>
-          {rows.map(row => (
-            <option key={row} value={row}>{row}</option>
-          ))}
-        </select>
-      );
-    };
+      // Sprawdź sekcję modułów
+      if (activityConfig.moduly && Array.isArray(activityConfig.moduly)) {
+        activityConfig.moduly
+          .filter(item => item.zona === selectedZona)
+          .forEach(item => {
+            if (item.rzad) rowSet.add(item.rzad);
+          });
+      }
+
+      rows = Array.from(rowSet);
+    }
+    // Dla logistyki, sprawdź podaktywność i dostosuj filtrowanie
+    else if (selectedMainActivity === 'Logistyka') {
+      const rowSet = new Set();
+
+      if (configSection && Array.isArray(configSection)) {
+        configSection
+          .filter(item => item.zona === selectedZona)
+          .forEach(item => {
+            if (item.rzad) rowSet.add(item.rzad);
+          });
+      }
+
+      rows = Array.from(rowSet);
+    }
+    // Dla konstrukcji, uwzględnij rodzaj podaktywności
+    else if (selectedMainActivity === 'Konstrukcja') {
+      const rowSet = new Set();
+
+      if (configSection && Array.isArray(configSection)) {
+        configSection
+          .filter(item => item.zona === selectedZona)
+          .forEach(item => {
+            if (item.rzad) rowSet.add(item.rzad);
+          });
+      }
+
+      rows = Array.from(rowSet);
+    }
+    // Dla pozostałych aktywności
+    else if (configSection && Array.isArray(configSection)) {
+      const rowSet = new Set();
+      configSection
+        .filter(item => item.zona === selectedZona)
+        .forEach(item => {
+          if (item.rzad) rowSet.add(item.rzad);
+        });
+      rows = Array.from(rowSet);
+    }
+
+    // Jeśli nadal nie mamy rzędów, spróbuj pobrać je z innych sekcji
+    if (rows.length === 0) {
+      // Sprawdź wszystkie dostępne sekcje
+      const sections = [];
+      if (activityConfig.logistyka) sections.push(activityConfig.logistyka);
+      if (activityConfig.moduly) sections.push(activityConfig.moduly);
+      if (activityConfig.konstrukcja) {
+        Object.values(activityConfig.konstrukcja).forEach(section => {
+          if (Array.isArray(section)) sections.push(section);
+        });
+      }
+
+      const rowSet = new Set();
+      sections.forEach(section => {
+        if (Array.isArray(section)) {
+          section
+            .filter(item => item.zona === selectedZona)
+            .forEach(item => {
+              if (item.rzad) rowSet.add(item.rzad);
+            });
+        }
+      });
+
+      rows = Array.from(rowSet);
+    }
+
+    // Sortowanie rzędów, aby były wyświetlane w logicznej kolejności
+    rows.sort((a, b) => {
+      // Spróbuj przekonwertować na liczby, jeśli możliwe
+      const numA = parseInt(a.replace(/\D/g, ''));
+      const numB = parseInt(b.replace(/\D/g, ''));
+
+      if (!isNaN(numA) && !isNaN(numB)) {
+        return numA - numB;
+      }
+
+      // Jeśli nie da się przekonwertować, sortuj alfabetycznie
+      return a.localeCompare(b);
+    });
+
+    return (
+      <select
+        value={selectedRow}
+        onChange={(e) => setSelectedRow(e.target.value)}
+        className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
+        disabled={isDisabled || !selectedZona}
+      >
+        <option value="">Wybierz rząd</option>
+        {rows.map(row => (
+          <option key={row} value={row}>{row}</option>
+        ))}
+      </select>
+    );
+  };
 
   // Renderowanie komponentu
   return (
@@ -610,13 +700,25 @@ const ActivitiesSelector = ({
           <Clipboard className="mr-2" size={20} />
           Aktywności
         </h3>
-        <button
-          type="button"
-          onClick={() => setShowHelp(!showHelp)}
-          className="text-blue-500 hover:text-blue-700"
-        >
-          <HelpCircle size={20} />
-        </button>
+        <div className="flex space-x-2">
+          {!isDisabled && (
+            <button
+              type="button"
+              onClick={() => setShowAddForm(!showAddForm)}
+              className={`text-blue-500 hover:text-blue-700 flex items-center ${showAddForm ? 'bg-blue-50 p-1 rounded' : ''}`}
+            >
+              {showAddForm ? <Trash2 size={16} className="mr-1" /> : <Plus size={16} className="mr-1" />}
+              {showAddForm ? "Anuluj dodawanie" : "Dodaj aktywność"}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => setShowHelp(!showHelp)}
+            className="text-blue-500 hover:text-blue-700"
+          >
+            <HelpCircle size={20} />
+          </button>
+        </div>
       </div>
 
       {showHelp && (
@@ -648,135 +750,147 @@ const ActivitiesSelector = ({
         </div>
       ) : (
         <>
-          {/* Formularz wyboru aktywności */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Główna aktywność
-              </label>
-              {renderMainActivityOptions()}
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Podaktywność
-              </label>
-              {renderSubActivityOptions()}
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Zona
-              </label>
-              {renderZonaOptions()}
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Rząd
-              </label>
-              {renderRowOptions()}
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
-            {selectedMainActivity !== 'Zakończenie budowy' && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Ilość {unit && `(${unit})`}
-                  {maxQuantity !== null && (
-                    <span className="text-xs text-gray-500 ml-1">
-                      max: {maxQuantity}
-                    </span>
-                  )}
-                </label>
-                <input
-                  type="number"
-                  min="1"
-                  max={maxQuantity}
-                  value={quantity}
-                  onChange={(e) => setQuantity(e.target.value)}
-                  className="px-3 py-2 w-full border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
-                  disabled={isDisabled || !selectedRow}
-                />
+          {/* Formularz wyboru aktywności - pokazujemy tylko jeśli showAddForm=true */}
+          {showAddForm && (
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Główna aktywność
+                  </label>
+                  {renderMainActivityOptions()}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Podaktywność
+                  </label>
+                  {renderSubActivityOptions()}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Zona
+                  </label>
+                  {renderZonaOptions()}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Rząd
+                  </label>
+                  {renderRowOptions()}
+                </div>
               </div>
-            )}
-            <div className="sm:col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Uwagi (opcjonalnie)
-              </label>
-              <input
-                type="text"
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                className="px-3 py-2 w-full border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
-                disabled={isDisabled || !selectedRow}
-                placeholder="Dodatkowe informacje..."
-              />
-            </div>
-          </div>
 
-          <div className="flex justify-end mb-6">
-            <button
-              type="button"
-              onClick={handleAddActivity}
-              className="flex items-center px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              disabled={isDisabled ||
-                        !selectedMainActivity ||
-                        !selectedSubActivity ||
-                        !selectedZona ||
-                        !selectedRow ||
-                        (selectedMainActivity !== 'Zakończenie budowy' && !quantity)}
-            >
-              <Plus size={18} className="mr-1" />
-              Dodaj aktywność
-            </button>
-          </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
+                {selectedMainActivity !== 'Zakończenie budowy' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Ilość {unit && `(${unit})`}
+                      {maxQuantity !== null && (
+                        <span className="text-xs text-gray-500 ml-1">
+                          max: {maxQuantity}
+                        </span>
+                      )}
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      max={maxQuantity}
+                      value={quantity}
+                      onChange={(e) => setQuantity(e.target.value)}
+                      className="px-3 py-2 w-full border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
+                      disabled={isDisabled || !selectedRow}
+                    />
+                  </div>
+                )}
+                <div className="sm:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Uwagi (opcjonalnie)
+                  </label>
+                  <input
+                    type="text"
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    className="px-3 py-2 w-full border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
+                    disabled={isDisabled || !selectedRow}
+                    placeholder="Dodatkowe informacje..."
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end mb-6">
+                <button
+                  type="button"
+                  onClick={handleAddActivity}
+                  className="flex items-center px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={isDisabled ||
+                            !selectedMainActivity ||
+                            !selectedSubActivity ||
+                            !selectedZona ||
+                            !selectedRow ||
+                            (selectedMainActivity !== 'Zakończenie budowy' && !quantity)}
+                >
+                  <Plus size={18} className="mr-1" />
+                  Dodaj aktywność
+                </button>
+              </div>
+            </>
+          )}
 
           {/* Lista dodanych aktywności */}
           {activities.length > 0 ? (
-            <>
-              <h4 className="font-medium text-gray-700 mb-2">Dodane aktywności:</h4>
-              <div className="space-y-3 mb-4">
-                {activities.map((activity, index) => (
-                  <div
-                    key={activity.id || index}
-                    className="bg-gray-50 p-3 rounded-md border border-gray-200 flex justify-between items-center"
-                  >
-                    <div>
-                      <p className="font-medium">{activity.activity_type} - {activity.sub_activity}</p>
-                      <p className="text-sm text-gray-600">
-                        Zona: {activity.zona}, Rząd: {activity.row}
-                        {activity.activity_type !== 'Zakończenie budowy' && (
-                          <>, Ilość: {activity.quantity} {activity.unit}</>
-                        )}
-                      </p>
-                      {activity.notes && <p className="text-sm text-gray-500 italic">Uwagi: {activity.notes}</p>}
-                    </div>
-                    {!isDisabled && (
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveActivity(activity.id)}
-                        className="text-red-500 hover:text-red-700 p-1"
-                        title="Usuń aktywność"
-                      >
-                        <Trash2 size={18} />
-                      </button>
-                    )}
+            <div className="space-y-3 mb-4">
+              <h4 className="font-medium text-gray-700 mb-2">Aktywności w raporcie:</h4>
+              {activities.map((activity, index) => (
+                <div
+                  key={activity.id || index}
+                  className="bg-gray-50 p-3 rounded-md border border-gray-200 flex justify-between items-center"
+                >
+                  <div>
+                    <p className="font-medium">{activity.activity_type} - {activity.sub_activity}</p>
+                    <p className="text-sm text-gray-600">
+                      Zona: {activity.zona}, Rząd: {activity.row}
+                      {activity.activity_type !== 'Zakończenie budowy' && (
+                        <>, Ilość: {activity.quantity} {activity.unit}</>
+                      )}
+                    </p>
+                    {activity.notes && <p className="text-sm text-gray-500 italic">Uwagi: {activity.notes}</p>}
                   </div>
-                ))}
-              </div>
+                  {!isDisabled && (
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveActivity(activity.id)}
+                      className="text-red-500 hover:text-red-700 p-1"
+                      title="Usuń aktywność"
+                    >
+                      <Trash2 size={18} />
+                    </button>
+                  )}
+                </div>
+              ))}
 
               {reportId && !isDisabled && (
-                <div className="flex justify-end">
+                <div className="flex justify-end mt-4">
                   <button
                     type="button"
                     onClick={saveActivitiesToReport}
-                    className="flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                    className="flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
+                    disabled={saving}
                   >
-                    <Save size={18} className="mr-1" />
-                    Zapisz aktywności do raportu
+                    {saving ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-white mr-2"></div>
+                        Zapisywanie...
+                      </>
+                    ) : (
+                      <>
+                        <Save size={18} className="mr-1" />
+                        Zapisz aktywności do raportu
+                      </>
+                    )}
                   </button>
                 </div>
               )}
-            </>
+            </div>
           ) : (
             <div className="text-center py-8 bg-gray-50 rounded-lg">
               <Clipboard className="mx-auto text-gray-400 mb-2" size={24} />
@@ -785,6 +899,15 @@ const ActivitiesSelector = ({
                   ? "Brak aktywności w raporcie"
                   : "Nie dodano jeszcze żadnych aktywności"}
               </p>
+              {!isDisabled && !showAddForm && (
+                <button
+                  onClick={() => setShowAddForm(true)}
+                  className="mt-4 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+                >
+                  <Plus size={16} className="inline mr-1" />
+                  Dodaj pierwszą aktywność
+                </button>
+              )}
             </div>
           )}
         </>
@@ -794,3 +917,11 @@ const ActivitiesSelector = ({
 };
 
 export default ActivitiesSelector;
+
+// Funkcja debugująca - odkomentuj w razie potrzeby
+// console.log('Config data:', activityConfig, 'Selected values:', {
+//   main: selectedMainActivity,
+//   sub: selectedSubActivity,
+//   zona: selectedZona,
+//   row: selectedRow
+// });

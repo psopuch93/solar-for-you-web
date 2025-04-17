@@ -1148,12 +1148,13 @@ const ProgressReportPage = () => {
 
             {showActivitiesSection && (
               <ActivitiesSelector
-                projectId={userProject.id}
-                reportId={reportData?.id}
-                isDisabled={reportStatus === 'submitted' || (reportStatus === 'draft' && !isEditingDraft)}
-                onActivitiesChange={handleActivitiesChange}
-                existingActivities={reportActivities}
-              />
+                  projectId={userProject.id}
+                  reportId={reportData?.id}
+                  isDisabled={reportStatus === 'submitted' || (reportStatus === 'draft' && !isEditingDraft)}
+                  onActivitiesChange={handleActivitiesChange}
+                  existingActivities={reportActivities}
+                  onSaveComplete={(reportId) => fetchReportActivities(reportId)}  // Dodany callback
+                />
             )}
           </div>
         )}
