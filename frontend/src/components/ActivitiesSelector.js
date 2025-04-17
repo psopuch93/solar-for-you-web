@@ -1,5 +1,5 @@
 // frontend/src/components/ActivitiesSelector.js
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Clipboard, ArrowDown, Plus, Trash2, Save, AlertTriangle, HelpCircle, Check, CheckSquare as ListChecks } from 'lucide-react';
 import { getCsrfToken } from '../utils/csrfToken';
 
@@ -10,9 +10,9 @@ const ActivitiesSelector = ({
   isDisabled = false,
   onActivitiesChange,
   existingActivities = [],
-  onSaveComplete  // Nowy prop do obsługi callbacku po zapisaniu aktywności
+  onSaveComplete  // Callback po zapisaniu aktywności
 }) => {
-  const [activities, setActivities] = useState(existingActivities.length > 0 ? existingActivities : []);
+  const [activities, setActivities] = useState([]);
   const [activityConfig, setActivityConfig] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -26,20 +26,30 @@ const ActivitiesSelector = ({
   const [unit, setUnit] = useState('');
   const [notes, setNotes] = useState('');
   const [showHelp, setShowHelp] = useState(false);
-  // Nowy stan - określa czy pokazujemy formularz dodawania czy listę aktywności
+  // Określa czy pokazujemy formularz dodawania czy listę aktywności
   const [showAddForm, setShowAddForm] = useState(false);
   // Stan do śledzenia procesu zapisu
   const [saving, setSaving] = useState(false);
+  // Dodajemy nowy stan dla śledzenia inicjalizacji
+  const [isInitialized, setIsInitialized] = useState(false);
 
+  // Poprawa: Używamy useCallback dla aktualizacji stanów, by uniknąć niepotrzebnych re-renderów
+  const updateActivities = useCallback((newActivities) => {
+    setActivities(newActivities);
+    if (onActivitiesChange) {
+      onActivitiesChange(newActivities);
+    }
+  }, [onActivitiesChange]);
+
+  // Poprawa: Inicjalizacja aktywności z existingActivities tylko raz przy montowaniu lub zmianie reportId
   useEffect(() => {
-      // Resetuj lokalne aktywności, gdy zmienia się ID raportu
-      if (reportId) {
-        setActivities(existingActivities.length > 0 ? existingActivities : []);
-      } else {
-        // Jeśli nie ma reportId, zawsze resetuj do pustej tablicy
-        setActivities([]);
-      }
-    }, [reportId, existingActivities]);
+    // Tylko jeśli nie jest jeszcze zainicjalizowane lub zmienił się reportId
+    if (!isInitialized || existingActivities.length > 0) {
+      console.log("Inicjalizacja aktywności:", existingActivities);
+      updateActivities(existingActivities);
+      setIsInitialized(true);
+    }
+  }, [existingActivities, isInitialized, reportId, updateActivities]);
 
   // Pobranie konfiguracji aktywności dla projektu
   useEffect(() => {
@@ -75,13 +85,6 @@ const ActivitiesSelector = ({
 
     fetchActivityConfig();
   }, [projectId]);
-
-  // Aktualizacja stanu aktywności przy zmianie propa existingActivities
-  useEffect(() => {
-    if (existingActivities && existingActivities.length > 0) {
-      setActivities(existingActivities);
-    }
-  }, [existingActivities]);
 
   // Po zmianie głównej aktywności, zresetuj pozostałe pola
   useEffect(() => {
@@ -235,13 +238,6 @@ const ActivitiesSelector = ({
     }
   }, [selectedTable, selectedMainActivity, selectedZona, selectedRow, activityConfig]);
 
-  // Powiadom rodzica o zmianach w aktywnościach
-  useEffect(() => {
-    if (onActivitiesChange) {
-      onActivitiesChange(activities);
-    }
-  }, [activities, onActivitiesChange]);
-
   // Funkcja sprawdzająca czy wprowadzona ilość jest prawidłowa
   const isQuantityValid = () => {
     if (!quantity) return true;
@@ -303,7 +299,9 @@ const ActivitiesSelector = ({
       notes: notes
     };
 
-    setActivities(prev => [...prev, newActivity]);
+    // POPRAWA: Użyj funkcji callback do aktualizacji stanu, aby mieć gwarancję aktualnych danych
+    const updatedActivities = [...activities, newActivity];
+    updateActivities(updatedActivities);
     setError(null);
 
     // Zresetuj formularz
@@ -321,7 +319,8 @@ const ActivitiesSelector = ({
 
   // Usuń aktywność
   const handleRemoveActivity = (activityId) => {
-    setActivities(activities.filter(activity => activity.id !== activityId));
+    const updatedActivities = activities.filter(activity => activity.id !== activityId);
+    updateActivities(updatedActivities);
   };
 
   // Zapisz aktywności do raportu
@@ -714,6 +713,8 @@ const ActivitiesSelector = ({
       }
     } else if (selectedMainActivity === 'Konstrukcja') {
       // Podobna logika dla konstrukcji
+      } else if (selectedMainActivity === 'Konstrukcja') {
+      // Podobna logika dla konstrukcji
       if (activityConfig.konstrukcja) {
         Object.values(activityConfig.konstrukcja).forEach(items => {
           if (Array.isArray(items)) {
@@ -808,49 +809,6 @@ const ActivitiesSelector = ({
       </select>
     );
   };
-
-  useEffect(() => {
-    if (activityConfig && selectedMainActivity && selectedSubActivity && selectedZona) {
-      console.group("DEBUG - Dane dla wybranej konfiguracji");
-      console.log("Główna aktywność:", selectedMainActivity);
-      console.log("Podaktywność:", selectedSubActivity);
-      console.log("Zona:", selectedZona);
-      console.log("Rząd:", selectedRow);
-
-      let configSection;
-      if (selectedMainActivity === 'Logistyka') {
-        configSection = activityConfig.logistyka;
-        console.log("Sekcja konfiguracji (Logistyka):", configSection);
-      } else if (selectedMainActivity === 'Konstrukcja') {
-        if (activityConfig.konstrukcja) {
-          console.log("Konstrukcja typy:", Object.keys(activityConfig.konstrukcja));
-          // Pobierz wszystkie dane konstrukcji
-          configSection = [];
-          Object.values(activityConfig.konstrukcja).forEach(sectionData => {
-            if (Array.isArray(sectionData)) {
-              configSection = [...configSection, ...sectionData];
-            }
-          });
-          console.log("Sekcja konfiguracji (Konstrukcja, wszystkie typy):", configSection);
-        }
-      } else if (selectedMainActivity === 'Moduły') {
-        configSection = activityConfig.moduly;
-        console.log("Sekcja konfiguracji (Moduły):", configSection);
-      }
-
-      // Filtruj po zonie
-      if (configSection && Array.isArray(configSection)) {
-        const filtered = configSection.filter(item => item.zona === selectedZona);
-        console.log(`Elementy dla zony ${selectedZona}:`, filtered);
-
-        // Sprawdź, jakie rzędy są dostępne
-        const availableRows = filtered.map(item => item.rzad).filter(Boolean);
-        console.log("Dostępne rzędy:", availableRows);
-      }
-
-      console.groupEnd();
-    }
-  }, [selectedMainActivity, selectedSubActivity, selectedZona, selectedRow, activityConfig]);
 
   // Renderowanie komponentu
   return (
