@@ -351,19 +351,7 @@ const ProgressReportPage = () => {
 
   // Zmodyfikowana funkcja obsługi zmiany aktywności
   const handleActivitiesChange = (activities) => {
-    // Upewnij się, że aktualnie mamy raport - jeśli nie, nie aktualizuj stanu aktywności
-    if (!reportData) {
-      console.log("Brak raportu - ignoruję aktualizację aktywności");
-      return;
-    }
-
-    // Upewnij się, że nie aktualizujemy stanu jeśli otrzymujemy pusty array,
-    // a mamy już jakieś aktywności (zapobiega to "miganiu")
-    if (activities.length === 0 && reportActivities.length > 0) {
-      console.log("Zignorowano aktualizację pustej listy aktywności, gdy istnieją już aktywności");
-      return;
-    }
-
+    // Usuwamy sprawdzenie czy raport istnieje - pozwalamy na wybór aktywności nawet bez istniejącego raportu
     console.log("Aktualizacja aktywności:", activities);
     setReportActivities(activities);
   };
@@ -1276,17 +1264,17 @@ const ProgressReportPage = () => {
           </div>
 
           {showActivitiesSection && (
-              <ActivitiesSelector
-                projectId={userProject.id}
-                reportId={reportData?.id || null}
-                isDisabled={!reportData || reportStatus === 'submitted' || (reportStatus === 'draft' && !isEditingDraft)}
-                onActivitiesChange={handleActivitiesChange}
-                existingActivities={reportData ? reportActivities : []}  // Kluczowa zmiana: przekazuj puste aktywności gdy nie ma raportu
-                onSaveComplete={(reportId) => {
-                  fetchReportActivities(reportId);
-                }}
-              />
-            )}
+            <ActivitiesSelector
+              projectId={userProject.id}
+              reportId={reportData?.id || null}
+              isDisabled={reportStatus === 'submitted' || (reportStatus === 'draft' && !isEditingDraft)}
+              onActivitiesChange={handleActivitiesChange}
+              existingActivities={reportActivities}
+              onSaveComplete={(reportId) => {
+                fetchReportActivities(reportId);
+              }}
+            />
+          )}
         </div>
       )}
 
@@ -1438,43 +1426,43 @@ const ProgressReportPage = () => {
               ))}
             </div>
            )}
-                </div>
-              )}
+        </div>
+      )}
 
-              {/* Modal do pokazywania zdjęć w pełnym rozmiarze */}
-              {showImageModal && selectedImage && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75 p-4">
-                  <div className="relative max-w-4xl max-h-full bg-white rounded-lg shadow-xl overflow-hidden">
-                    <button
-                      onClick={() => setShowImageModal(false)}
-                      className="absolute top-2 right-2 text-gray-600 hover:text-gray-900 bg-white rounded-full p-1"
-                    >
-                      <X size={24} />
-                    </button>
+      {/* Modal do pokazywania zdjęć w pełnym rozmiarze */}
+        {showImageModal && selectedImage && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75 p-4">
+            <div className="relative max-w-4xl max-h-full bg-white rounded-lg shadow-xl overflow-hidden">
+              <button
+                onClick={() => setShowImageModal(false)}
+                className="absolute top-2 right-2 text-gray-600 hover:text-gray-900 bg-white rounded-full p-1"
+              >
+                <X size={24} />
+              </button>
 
-                    <div className="p-2">
-                      <img
-                        src={selectedImage.image_url || selectedImage.image}
-                        alt={selectedImage.name}
-                        className="max-h-[80vh] max-w-full object-contain"
-                        onError={(e) => {
-                          e.target.onerror = null;
-                          e.target.src = "/api/placeholder/800/600";
-                        }}
-                      />
-                    </div>
+              <div className="p-2">
+                <img
+                  src={selectedImage.image_url || selectedImage.image}
+                  alt={selectedImage.name}
+                  className="max-h-[80vh] max-w-full object-contain"
+                  onError={(e) => {
+                    e.target.onerror = null;
+                    e.target.src = "/api/placeholder/800/600";
+                  }}
+                />
+              </div>
 
-                    <div className="p-4 bg-gray-100 border-t">
-                      <p className="font-medium text-gray-800">{selectedImage.name}</p>
-                      {selectedImage.description && (
-                        <p className="text-gray-600 mt-1">{selectedImage.description}</p>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
+              <div className="p-4 bg-gray-100 border-t">
+                <p className="font-medium text-gray-800">{selectedImage.name}</p>
+                {selectedImage.description && (
+                  <p className="text-gray-600 mt-1">{selectedImage.description}</p>
+                )}
+              </div>
             </div>
-          );
-        };
+          </div>
+         )}
+     </div>
+ );
+};
 
 export default ProgressReportPage;

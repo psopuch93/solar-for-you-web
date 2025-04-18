@@ -35,7 +35,7 @@ const ActivitiesSelector = ({
   // Dodajemy licznik aktywności, aby generować unikalne ID
   const [activityCounter, setActivityCounter] = useState(1);
 
-  // Poprawa: Używamy useCallback dla aktualizacji stanów, by uniknąć niepotrzebnych re-renderów
+  // Używamy useCallback dla aktualizacji stanów, by uniknąć niepotrzebnych re-renderów
   const updateActivities = useCallback((newActivities) => {
     setActivities(newActivities);
     if (onActivitiesChange) {
@@ -43,50 +43,45 @@ const ActivitiesSelector = ({
     }
   }, [onActivitiesChange]);
 
-  // Poprawa: Inicjalizacja aktywności z existingActivities tylko raz przy montowaniu lub zmianie reportId
+  // Inicjalizacja aktywności z existingActivities lub utworzenie pustej listy
   useEffect(() => {
-      // Jeśli reportId jest null (brak raportu), resetuj aktywności
-      if (!reportId) {
-        console.log("Resetowanie aktywności (brak reportId)");
-        updateActivities([]);
-        setIsInitialized(true);
-        return;
+    // Inicjalizujemy aktywności zawsze, nawet jeśli reportId jest null
+    console.log("Inicjalizacja komponentu aktywności, reportId:", reportId, "existingActivities:", existingActivities);
+
+    // Sprawdź, czy otrzymaliśmy nowe existingActivities
+    if (existingActivities.length > 0) {
+      console.log("Inicjalizacja aktywności z danych zewnętrznych:", existingActivities);
+
+      // Najpierw sprawdź, czy te aktywności nie są już załadowane
+      if (JSON.stringify(activities) !== JSON.stringify(existingActivities)) {
+        console.log("Aktualizuję aktywności, bo są różnice");
+        updateActivities(existingActivities);
+
+        // Aktualizuj licznik aktywności na podstawie istniejących aktywności
+        const maxId = existingActivities.reduce((max, activity) => {
+          // Jeśli aktywność ma id w formacie "activity_X", wyciągnij liczbę
+          if (activity.id && typeof activity.id === 'string' && activity.id.startsWith('activity_')) {
+            const idNum = parseInt(activity.id.split('_')[1], 10);
+            return isNaN(idNum) ? max : Math.max(max, idNum);
+          }
+          // Jeśli id jest liczbą, użyj jej bezpośrednio
+          else if (activity.id && !isNaN(parseInt(activity.id, 10))) {
+            return Math.max(max, parseInt(activity.id, 10));
+          }
+          return max;
+        }, 0);
+
+        // Ustaw licznik na największe ID + 1
+        setActivityCounter(maxId + 1);
       }
+    } else if (!isInitialized) {
+      // Jeśli nie mamy aktywności, zainicjalizuj pustą listę
+      console.log("Inicjalizuję pustą listę aktywności");
+      updateActivities([]);
+    }
 
-      // Sprawdź, czy otrzymaliśmy nowe existingActivities dla tego raportId
-      if (existingActivities.length > 0) {
-        console.log("Inicjalizacja aktywności z danych zewnętrznych:", existingActivities);
-
-        // Najpierw sprawdź, czy te aktywności nie są już załadowane
-        if (JSON.stringify(activities) !== JSON.stringify(existingActivities)) {
-          console.log("Aktualizuję aktywności, bo są różnice");
-          updateActivities(existingActivities);
-
-          // Aktualizuj licznik aktywności na podstawie istniejących aktywności
-          const maxId = existingActivities.reduce((max, activity) => {
-            // Jeśli aktywność ma id w formacie "activity_X", wyciągnij liczbę
-            if (activity.id && typeof activity.id === 'string' && activity.id.startsWith('activity_')) {
-              const idNum = parseInt(activity.id.split('_')[1], 10);
-              return isNaN(idNum) ? max : Math.max(max, idNum);
-            }
-            // Jeśli id jest liczbą, użyj jej bezpośrednio
-            else if (activity.id && !isNaN(parseInt(activity.id, 10))) {
-              return Math.max(max, parseInt(activity.id, 10));
-            }
-            return max;
-          }, 0);
-
-          // Ustaw licznik na największe ID + 1
-          setActivityCounter(maxId + 1);
-        }
-
-        setIsInitialized(true);
-      } else if (!isInitialized && reportId) {
-        // Jeśli nie mamy aktywności, ale mamy reportId, zainicjalizuj pustą listę
-        updateActivities([]);
-        setIsInitialized(true);
-      }
-    }, [existingActivities, reportId, activities, updateActivities, isInitialized]);
+    setIsInitialized(true);
+  }, [existingActivities, activities, updateActivities, isInitialized, reportId]);
 
   // Pobranie konfiguracji aktywności dla projektu
   useEffect(() => {
@@ -340,7 +335,7 @@ const ActivitiesSelector = ({
       notes: notes
     };
 
-    // POPRAWA: Użyj funkcji callback do aktualizacji stanu, aby mieć gwarancję aktualnych danych
+    // Użyj funkcji callback do aktualizacji stanu, aby mieć gwarancję aktualnych danych
     const updatedActivities = [...activities, newActivity];
     updateActivities(updatedActivities);
     setError(null);
@@ -713,10 +708,20 @@ const ActivitiesSelector = ({
       zonas = Array.from(zonaSet);
     }
 
-    // Sortowanie zon
-    zonas.sort();
+    zonas.sort((a, b) => {
+      // Spróbuj przekonwertować na liczby, jeśli możliwe
+      const numA = parseInt(a);
+      const numB = parseInt(b);
 
-    return (
+      if (!isNaN(numA) && !isNaN(numB)) {
+        return numA - numB;
+      }
+
+      // Jeśli nie da się przekonwertować, sortuj alfabetycznie
+      return a.localeCompare(b);
+     });
+
+     return (
       <select
         value={selectedZona}
         onChange={(e) => setSelectedZona(e.target.value)}
@@ -728,375 +733,375 @@ const ActivitiesSelector = ({
           <option key={zona} value={zona}>{zona}</option>
         ))}
       </select>
+     );
+     };
+
+     // Renderowanie opcji dla rzędów
+     const renderRowOptions = () => {
+      if (!activityConfig || !selectedMainActivity || !selectedSubActivity || !selectedZona) return null;
+
+      // Zbieramy wszystkie rzędy dla wybranej zony i podaktywności
+      const rowSet = new Set();
+
+      // Znajdź i przetwórz dane dla wybranej kombinacji
+      if (selectedMainActivity === 'Logistyka') {
+        const logistykaData = activityConfig.logistyka;
+
+        if (Array.isArray(logistykaData)) {
+          // Filtruj elementy dla wybranej zony
+          logistykaData.forEach(item => {
+            // Sprawdź, czy item zawiera zonę i czy jest to nasza wybrana zona
+            if (item.zona === parseInt(selectedZona) || item.zona === selectedZona) {
+              // Element ma zonę, sprawdź czy ma rzad
+              if (item.rzad !== undefined) {
+                // Dodaj rzad do zbioru
+                rowSet.add(item.rzad.toString());
+              }
+            }
+          });
+        }
+      } else if (selectedMainActivity === 'Konstrukcja') {
+        // Podobna logika dla konstrukcji
+        if (activityConfig.konstrukcja) {
+          Object.values(activityConfig.konstrukcja).forEach(items => {
+            if (Array.isArray(items)) {
+              items.forEach(item => {
+                if (item.zona === parseInt(selectedZona) || item.zona === selectedZona) {
+                  if (item.rzad !== undefined) {
+                    rowSet.add(item.rzad.toString());
+                  }
+                }
+              });
+            }
+          });
+        }
+      } else if (selectedMainActivity === 'Moduły') {
+        // Podobna logika dla modułów
+        if (Array.isArray(activityConfig.moduly)) {
+          activityConfig.moduly.forEach(item => {
+            if (item.zona === parseInt(selectedZona) || item.zona === selectedZona) {
+              if (item.rzad !== undefined) {
+                rowSet.add(item.rzad.toString());
+              }
+            }
+          });
+        }
+      }
+
+      // Konwertuj Set na tablicę i sortuj
+      let rows = Array.from(rowSet);
+
+      // Sortowanie rzędów
+      rows.sort((a, b) => {
+        // Spróbuj przekonwertować na liczby, jeśli możliwe
+        const numA = parseInt(a);
+        const numB = parseInt(b);
+
+        if (!isNaN(numA) && !isNaN(numB)) {
+          return numA - numB;
+        }
+
+        // Jeśli nie da się przekonwertować, sortuj alfabetycznie
+        return a.localeCompare(b);
+      });
+
+      return (
+        <select
+          value={selectedRow}
+          onChange={(e) => setSelectedRow(e.target.value)}
+          className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
+          disabled={isDisabled || !selectedZona}
+        >
+          <option value="">Wybierz rząd</option>
+          {rows.map(row => (
+            <option key={row} value={row}>{row}</option>
+          ))}
+        </select>
+      );
+     };
+
+     // Renderowanie opcji dla numerów stołów
+     const renderTableOptions = () => {
+      if (!activityConfig || !selectedMainActivity || !selectedSubActivity ||
+          !selectedZona || !selectedRow || selectedMainActivity !== 'Moduły') {
+        return null;
+      }
+
+      // Pobierz dane dla wybranej zony i rzędu
+      let tableNumbers = [];
+      if (Array.isArray(activityConfig.moduly)) {
+        // Znajdź odpowiedni rząd i zonę
+        const rowData = activityConfig.moduly.find(item =>
+          (item.zona === parseInt(selectedZona) || item.zona === selectedZona) &&
+          (item.rzad === parseInt(selectedRow) || item.rzad === selectedRow)
+        );
+
+        if (rowData && rowData.stoly && Array.isArray(rowData.stoly)) {
+          // Pobierz numery stołów
+          tableNumbers = rowData.stoly.map(stol => stol.numer);
+        }
+      }
+
+      return (
+        <select
+          value={selectedTable}
+          onChange={(e) => setSelectedTable(e.target.value)}
+          className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
+          disabled={isDisabled || tableNumbers.length === 0}
+        >
+          <option value="">Wybierz numer stołu</option>
+          {tableNumbers.map(number => (
+            <option key={number} value={number}>{number}</option>
+          ))}
+        </select>
+      );
+     };
+
+     // Renderowanie komponentu
+     return (
+     <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+       <div className="flex justify-between mb-4">
+         <h3 className="text-lg font-semibold flex items-center">
+           <Clipboard className="mr-2" size={20} />
+           Aktywności
+         </h3>
+         <div className="flex space-x-2">
+           {!isDisabled && (
+             <button
+               type="button"
+               onClick={() => setShowAddForm(!showAddForm)}
+               className={`text-blue-500 hover:text-blue-700 flex items-center ${showAddForm ? 'bg-blue-50 p-1 rounded' : ''}`}
+             >
+               {showAddForm ? <Trash2 size={16} className="mr-1" /> : <Plus size={16} className="mr-1" />}
+               {showAddForm ? "Anuluj dodawanie" : "Dodaj aktywność"}
+             </button>
+           )}
+           <button
+             type="button"
+             onClick={() => setShowHelp(!showHelp)}
+             className="text-blue-500 hover:text-blue-700"
+           >
+             <HelpCircle size={20} />
+           </button>
+         </div>
+       </div>
+
+       {showHelp && (
+         <div className="bg-blue-50 p-4 mb-4 rounded-md">
+           <p className="text-sm text-blue-800">
+             W tej sekcji możesz wybrać aktywności wykonane w ramach raportu.
+             Najpierw wybierz główną aktywność, następnie podaktywność, zonę i rząd.
+             Podaj ilość wykonanych prac (o ile dotyczy) i dodaj aktywność do listy.
+             Możesz dodać wiele aktywności do jednego raportu.
+           </p>
+         </div>
+       )}
+
+       {loading ? (
+         <div className="flex justify-center items-center p-4">
+           <div className="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-blue-500"></div>
+         </div>
+       ) : error ? (
+         <div className="bg-red-50 p-4 mb-4 rounded-md flex items-start">
+           <AlertTriangle className="text-red-500 mr-2 mt-0.5" size={18} />
+           <div>
+             <p className="text-red-800">{error}</p>
+             {error === 'Brak konfiguracji aktywności dla tego projektu' && (
+               <p className="text-sm text-red-600 mt-1">
+                 Administrator musi najpierw wgrać plik konfiguracyjny aktywności dla tego projektu.
+               </p>
+             )}
+           </div>
+         </div>
+       ) : (
+         <>
+           {/* Formularz wyboru aktywności - pokazujemy tylko jeśli showAddForm=true */}
+           {showAddForm && (
+             <>
+               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+                 <div>
+                   <label className="block text-sm font-medium text-gray-700 mb-1">
+                     Główna aktywność
+                   </label>
+                   {renderMainActivityOptions()}
+                 </div>
+                 <div>
+                   <label className="block text-sm font-medium text-gray-700 mb-1">
+                     Podaktywność
+                   </label>
+                   {renderSubActivityOptions()}
+                 </div>
+                 <div>
+                   <label className="block text-sm font-medium text-gray-700 mb-1">
+                     Zona
+                   </label>
+                   {renderZonaOptions()}
+                 </div>
+                 <div>
+                   <label className="block text-sm font-medium text-gray-700 mb-1">
+                     Rząd
+                   </label>
+                   {renderRowOptions()}
+                 </div>
+               </div>
+
+               {/* Dodaj pole numeru stołu jeśli wybrano Moduły */}
+               {selectedMainActivity === 'Moduły' && selectedSubActivity === 'Montaż modułów' && selectedZona && selectedRow && (
+                 <div className="mb-4">
+                   <label className="block text-sm font-medium text-gray-700 mb-1">
+                     Numer stołu
+                   </label>
+                   {renderTableOptions()}
+                 </div>
+               )}
+
+               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
+                 {selectedMainActivity !== 'Zakończenie budowy' && (
+                   <div>
+                     <label className="block text-sm font-medium text-gray-700 mb-1">
+                       Ilość {unit && `(${unit})`}
+                       {maxQuantity !== null && (
+                         <span className="text-xs text-gray-500 ml-1">
+                           max: {maxQuantity}
+                         </span>
+                       )}
+                     </label>
+                     <input
+                       type="number"
+                       min="1"
+                       max={maxQuantity || undefined}
+                       value={quantity}
+                       onChange={(e) => setQuantity(e.target.value)}
+                       className={`px-3 py-2 w-full border rounded-md focus:outline-none focus:ring-2 ${
+                         !isQuantityValid()
+                           ? 'border-red-500 bg-red-50 focus:ring-red-500'
+                           : 'border-gray-300 focus:ring-blue-500'
+                       } disabled:bg-gray-100 disabled:text-gray-500`}
+                       disabled={isDisabled || !selectedRow || (selectedMainActivity === 'Moduły' && !selectedTable)}
+                       placeholder={maxQuantity !== null ? `Max: ${maxQuantity}` : "Ilość"}
+                     />
+                     {!isQuantityValid() && (
+                       <p className="mt-1 text-xs text-red-600">
+                         Maksymalna dozwolona ilość to {maxQuantity}
+                       </p>
+                     )}
+                   </div>
+                 )}
+                 <div className="sm:col-span-2">
+                   <label className="block text-sm font-medium text-gray-700 mb-1">
+                     Uwagi (opcjonalnie)
+                   </label>
+                   <input
+                     type="text"
+                     value={notes}
+                     onChange={(e) => setNotes(e.target.value)}
+                     className="px-3 py-2 w-full border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
+                     disabled={isDisabled || !selectedRow || (selectedMainActivity === 'Moduły' && !selectedTable)}
+                     placeholder="Dodatkowe informacje..."
+                   />
+                 </div>
+               </div>
+
+               <div className="flex justify-end mb-6">
+                 <button
+                   type="button"
+                   onClick={handleAddActivity}
+                   className="flex items-center px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                   disabled={isDisabled ||
+                             !selectedMainActivity ||
+                             !selectedSubActivity ||
+                             !selectedZona ||
+                             !selectedRow ||
+                             (selectedMainActivity === 'Moduły' && !selectedTable) ||
+                             (selectedMainActivity !== 'Zakończenie budowy' && !quantity) ||
+                             !isQuantityValid()}
+                 >
+                   <Plus size={18} className="mr-1" />
+                   Dodaj aktywność
+                 </button>
+               </div>
+             </>
+           )}
+
+           {/* Lista dodanych aktywności */}
+           {activities.length > 0 ? (
+             <div className="space-y-3 mb-4">
+               <h4 className="font-medium text-gray-700 mb-2">Aktywności w raporcie:</h4>
+               {activities.map((activity, index) => (
+                 <div
+                   key={activity.id || index}
+                   className="bg-gray-50 p-3 rounded-md border border-gray-200 flex justify-between items-center"
+                 >
+                   <div>
+                     <p className="font-medium">{activity.activity_type} - {activity.sub_activity}</p>
+                     <p className="text-sm text-gray-600">
+                       Zona: {activity.zona}, Rząd: {activity.row}
+                       {activity.table && <>, Stół: {activity.table}</>}
+                       {activity.activity_type !== 'Zakończenie budowy' && (
+                         <>, Ilość: {activity.quantity} {activity.unit}</>
+                       )}
+                     </p>
+                     {activity.notes && <p className="text-sm text-gray-500 italic">Uwagi: {activity.notes}</p>}
+                   </div>
+                   {!isDisabled && (
+                     <button
+                       type="button"
+                       onClick={() => handleRemoveActivity(activity.id)}
+                       className="text-red-500 hover:text-red-700 p-1"
+                       title="Usuń aktywność"
+                     >
+                       <Trash2 size={18} />
+                     </button>
+                   )}
+                 </div>
+               ))}
+
+               {reportId && !isDisabled && (
+                 <div className="flex justify-end mt-4">
+                   <button
+                     type="button"
+                     onClick={saveActivitiesToReport}
+                     className="flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
+                     disabled={saving}
+                   >
+                     {saving ? (
+                       <>
+                         <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-white mr-2"></div>
+                         Zapisywanie...
+                       </>
+                     ) : (
+                       <>
+                         <Save size={18} className="mr-1" />
+                         Zapisz aktywności do raportu
+                       </>
+                     )}
+                   </button>
+                 </div>
+               )}
+             </div>
+           ) : (
+             <div className="text-center py-8 bg-gray-50 rounded-lg">
+               <Clipboard className="mx-auto text-gray-400 mb-2" size={24} />
+               <p className="text-gray-500">
+                 {isDisabled
+                   ? "Brak aktywności w raporcie"
+                   : "Nie dodano jeszcze żadnych aktywności"}
+               </p>
+               {!isDisabled && !showAddForm && (
+                 <button
+                   onClick={() => setShowAddForm(true)}
+                   className="mt-4 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+                 >
+                   <Plus size={16} className="inline mr-1" />
+                   Dodaj pierwszą aktywność
+                 </button>
+               )}
+             </div>
+           )}
+         </>
+       )}
+     </div>
     );
   };
-
-  // Renderowanie opcji dla rzędów
-  const renderRowOptions = () => {
-    if (!activityConfig || !selectedMainActivity || !selectedSubActivity || !selectedZona) return null;
-
-    // Zbieramy wszystkie rzędy dla wybranej zony i podaktywności
-    const rowSet = new Set();
-
-    // Znajdź i przetwórz dane dla wybranej kombinacji
-    if (selectedMainActivity === 'Logistyka') {
-      const logistykaData = activityConfig.logistyka;
-
-      if (Array.isArray(logistykaData)) {
-        // Filtruj elementy dla wybranej zony
-        logistykaData.forEach(item => {
-          // Sprawdź, czy item zawiera zonę i czy jest to nasza wybrana zona
-          if (item.zona === parseInt(selectedZona) || item.zona === selectedZona) {
-            // Element ma zonę, sprawdź czy ma rzad
-            if (item.rzad !== undefined) {
-              // Dodaj rzad do zbioru
-              rowSet.add(item.rzad.toString());
-            }
-          }
-        });
-      }
-    } else if (selectedMainActivity === 'Konstrukcja') {
-      // Podobna logika dla konstrukcji
-      if (activityConfig.konstrukcja) {
-        Object.values(activityConfig.konstrukcja).forEach(items => {
-          if (Array.isArray(items)) {
-            items.forEach(item => {
-              if (item.zona === parseInt(selectedZona) || item.zona === selectedZona) {
-                if (item.rzad !== undefined) {
-                  rowSet.add(item.rzad.toString());
-                }
-              }
-            });
-          }
-        });
-      }
-    } else if (selectedMainActivity === 'Moduły') {
-      // Podobna logika dla modułów
-      if (Array.isArray(activityConfig.moduly)) {
-        activityConfig.moduly.forEach(item => {
-          if (item.zona === parseInt(selectedZona) || item.zona === selectedZona) {
-            if (item.rzad !== undefined) {
-              rowSet.add(item.rzad.toString());
-            }
-          }
-        });
-      }
-    }
-
-    // Konwertuj Set na tablicę i sortuj
-    let rows = Array.from(rowSet);
-
-    // Sortowanie rzędów
-    rows.sort((a, b) => {
-      // Spróbuj przekonwertować na liczby, jeśli możliwe
-      const numA = parseInt(a);
-      const numB = parseInt(b);
-
-      if (!isNaN(numA) && !isNaN(numB)) {
-        return numA - numB;
-      }
-
-      // Jeśli nie da się przekonwertować, sortuj alfabetycznie
-      return a.localeCompare(b);
-    });
-
-    return (
-      <select
-        value={selectedRow}
-        onChange={(e) => setSelectedRow(e.target.value)}
-        className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
-        disabled={isDisabled || !selectedZona}
-      >
-        <option value="">Wybierz rząd</option>
-        {rows.map(row => (
-          <option key={row} value={row}>{row}</option>
-        ))}
-      </select>
-    );
-   };
-
-   // Renderowanie opcji dla numerów stołów
-   const renderTableOptions = () => {
-    if (!activityConfig || !selectedMainActivity || !selectedSubActivity ||
-        !selectedZona || !selectedRow || selectedMainActivity !== 'Moduły') {
-      return null;
-    }
-
-    // Pobierz dane dla wybranej zony i rzędu
-    let tableNumbers = [];
-    if (Array.isArray(activityConfig.moduly)) {
-      // Znajdź odpowiedni rząd i zonę
-      const rowData = activityConfig.moduly.find(item =>
-        (item.zona === parseInt(selectedZona) || item.zona === selectedZona) &&
-        (item.rzad === parseInt(selectedRow) || item.rzad === selectedRow)
-      );
-
-      if (rowData && rowData.stoly && Array.isArray(rowData.stoly)) {
-        // Pobierz numery stołów
-        tableNumbers = rowData.stoly.map(stol => stol.numer);
-      }
-    }
-
-    return (
-      <select
-        value={selectedTable}
-        onChange={(e) => setSelectedTable(e.target.value)}
-        className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
-        disabled={isDisabled || tableNumbers.length === 0}
-      >
-        <option value="">Wybierz numer stołu</option>
-        {tableNumbers.map(number => (
-          <option key={number} value={number}>{number}</option>
-        ))}
-      </select>
-    );
-   };
-
-   // Renderowanie komponentu
-   return (
-    <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-      <div className="flex justify-between mb-4">
-        <h3 className="text-lg font-semibold flex items-center">
-          <Clipboard className="mr-2" size={20} />
-          Aktywności
-        </h3>
-        <div className="flex space-x-2">
-          {!isDisabled && (
-            <button
-              type="button"
-              onClick={() => setShowAddForm(!showAddForm)}
-              className={`text-blue-500 hover:text-blue-700 flex items-center ${showAddForm ? 'bg-blue-50 p-1 rounded' : ''}`}
-            >
-              {showAddForm ? <Trash2 size={16} className="mr-1" /> : <Plus size={16} className="mr-1" />}
-              {showAddForm ? "Anuluj dodawanie" : "Dodaj aktywność"}
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={() => setShowHelp(!showHelp)}
-            className="text-blue-500 hover:text-blue-700"
-          >
-            <HelpCircle size={20} />
-          </button>
-        </div>
-      </div>
-
-      {showHelp && (
-        <div className="bg-blue-50 p-4 mb-4 rounded-md">
-          <p className="text-sm text-blue-800">
-            W tej sekcji możesz wybrać aktywności wykonane w ramach raportu.
-            Najpierw wybierz główną aktywność, następnie podaktywność, zonę i rząd.
-            Podaj ilość wykonanych prac (o ile dotyczy) i dodaj aktywność do listy.
-            Możesz dodać wiele aktywności do jednego raportu.
-          </p>
-        </div>
-      )}
-
-      {loading ? (
-        <div className="flex justify-center items-center p-4">
-          <div className="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-blue-500"></div>
-        </div>
-      ) : error ? (
-        <div className="bg-red-50 p-4 mb-4 rounded-md flex items-start">
-          <AlertTriangle className="text-red-500 mr-2 mt-0.5" size={18} />
-          <div>
-            <p className="text-red-800">{error}</p>
-            {error === 'Brak konfiguracji aktywności dla tego projektu' && (
-              <p className="text-sm text-red-600 mt-1">
-                Administrator musi najpierw wgrać plik konfiguracyjny aktywności dla tego projektu.
-              </p>
-            )}
-          </div>
-        </div>
-      ) : (
-        <>
-          {/* Formularz wyboru aktywności - pokazujemy tylko jeśli showAddForm=true */}
-          {showAddForm && (
-            <>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Główna aktywność
-                  </label>
-                  {renderMainActivityOptions()}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Podaktywność
-                  </label>
-                  {renderSubActivityOptions()}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Zona
-                  </label>
-                  {renderZonaOptions()}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Rząd
-                  </label>
-                  {renderRowOptions()}
-                </div>
-              </div>
-
-              {/* Dodaj pole numeru stołu jeśli wybrano Moduły */}
-              {selectedMainActivity === 'Moduły' && selectedSubActivity === 'Montaż modułów' && selectedZona && selectedRow && (
-                <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Numer stołu
-                  </label>
-                  {renderTableOptions()}
-                </div>
-              )}
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
-                {selectedMainActivity !== 'Zakończenie budowy' && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Ilość {unit && `(${unit})`}
-                      {maxQuantity !== null && (
-                        <span className="text-xs text-gray-500 ml-1">
-                          max: {maxQuantity}
-                        </span>
-                      )}
-                    </label>
-                    <input
-                      type="number"
-                      min="1"
-                      max={maxQuantity || undefined}
-                      value={quantity}
-                      onChange={(e) => setQuantity(e.target.value)}
-                      className={`px-3 py-2 w-full border rounded-md focus:outline-none focus:ring-2 ${
-                        !isQuantityValid()
-                          ? 'border-red-500 bg-red-50 focus:ring-red-500'
-                          : 'border-gray-300 focus:ring-blue-500'
-                      } disabled:bg-gray-100 disabled:text-gray-500`}
-                      disabled={isDisabled || !selectedRow || (selectedMainActivity === 'Moduły' && !selectedTable)}
-                      placeholder={maxQuantity !== null ? `Max: ${maxQuantity}` : "Ilość"}
-                    />
-                    {!isQuantityValid() && (
-                      <p className="mt-1 text-xs text-red-600">
-                        Maksymalna dozwolona ilość to {maxQuantity}
-                      </p>
-                    )}
-                  </div>
-                )}
-                <div className="sm:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Uwagi (opcjonalnie)
-                  </label>
-                  <input
-                    type="text"
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
-                    className="px-3 py-2 w-full border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
-                    disabled={isDisabled || !selectedRow || (selectedMainActivity === 'Moduły' && !selectedTable)}
-                    placeholder="Dodatkowe informacje..."
-                  />
-                </div>
-              </div>
-
-              <div className="flex justify-end mb-6">
-                <button
-                  type="button"
-                  onClick={handleAddActivity}
-                  className="flex items-center px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  disabled={isDisabled ||
-                            !selectedMainActivity ||
-                            !selectedSubActivity ||
-                            !selectedZona ||
-                            !selectedRow ||
-                            (selectedMainActivity === 'Moduły' && !selectedTable) ||
-                            (selectedMainActivity !== 'Zakończenie budowy' && !quantity) ||
-                            !isQuantityValid()}
-                >
-                  <Plus size={18} className="mr-1" />
-                  Dodaj aktywność
-                </button>
-              </div>
-            </>
-          )}
-
-          {/* Lista dodanych aktywności */}
-          {activities.length > 0 ? (
-            <div className="space-y-3 mb-4">
-              <h4 className="font-medium text-gray-700 mb-2">Aktywności w raporcie:</h4>
-              {activities.map((activity, index) => (
-                <div
-                  key={activity.id || index}
-                  className="bg-gray-50 p-3 rounded-md border border-gray-200 flex justify-between items-center"
-                >
-                  <div>
-                    <p className="font-medium">{activity.activity_type} - {activity.sub_activity}</p>
-                    <p className="text-sm text-gray-600">
-                      Zona: {activity.zona}, Rząd: {activity.row}
-                      {activity.table && <>, Stół: {activity.table}</>}
-                      {activity.activity_type !== 'Zakończenie budowy' && (
-                        <>, Ilość: {activity.quantity} {activity.unit}</>
-                      )}
-                    </p>
-                    {activity.notes && <p className="text-sm text-gray-500 italic">Uwagi: {activity.notes}</p>}
-                  </div>
-                  {!isDisabled && (
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveActivity(activity.id)}
-                      className="text-red-500 hover:text-red-700 p-1"
-                      title="Usuń aktywność"
-                    >
-                      <Trash2 size={18} />
-                    </button>
-                  )}
-                </div>
-              ))}
-
-              {reportId && !isDisabled && (
-                <div className="flex justify-end mt-4">
-                  <button
-                    type="button"
-                    onClick={saveActivitiesToReport}
-                    className="flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
-                    disabled={saving}
-                  >
-                    {saving ? (
-                      <>
-                        <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-white mr-2"></div>
-                        Zapisywanie...
-                      </>
-                    ) : (
-                      <>
-                        <Save size={18} className="mr-1" />
-                        Zapisz aktywności do raportu
-                      </>
-                    )}
-                  </button>
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="text-center py-8 bg-gray-50 rounded-lg">
-              <Clipboard className="mx-auto text-gray-400 mb-2" size={24} />
-              <p className="text-gray-500">
-                {isDisabled
-                  ? "Brak aktywności w raporcie"
-                  : "Nie dodano jeszcze żadnych aktywności"}
-              </p>
-              {!isDisabled && !showAddForm && (
-                <button
-                  onClick={() => setShowAddForm(true)}
-                  className="mt-4 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
-                >
-                  <Plus size={16} className="inline mr-1" />
-                  Dodaj pierwszą aktywność
-                </button>
-              )}
-            </div>
-          )}
-        </>
-      )}
-    </div>
-   );
-};
 
 export default ActivitiesSelector;
