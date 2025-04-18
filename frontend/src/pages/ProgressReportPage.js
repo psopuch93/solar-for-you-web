@@ -66,6 +66,25 @@ const ProgressReportPage = () => {
 
   const navigate = useNavigate();
 
+  // Funkcja do wyświetlania powiadomień - zdefiniowana na początku, żeby mogła być używana wszędzie
+  const showNotification = (message, type = 'info') => {
+    setNotification({ message, type });
+    setTimeout(() => setNotification(null), 3000);
+  };
+
+  // Czy formularz powinien być zablokowany - również zdefiniowane wcześnie
+  const isFormDisabled = reportStatus === 'submitted' || (reportStatus === 'draft' && !isEditingDraft);
+
+  // Helper function for work entries section title
+  const getWorkEntriesSectionTitle = () => {
+    if (workEntries.length === 0) {
+      return "Brak wybranych pracowników";
+    }
+    return `Raportowane godziny pracy (${workEntries.length} ${
+      workEntries.length === 1 ? 'pracownik' : workEntries.length < 5 ? 'pracownicy' : 'pracowników'
+    })`;
+  };
+
   // Pobierz dane przy pierwszym renderowaniu
   useEffect(() => {
     fetchData();
@@ -75,6 +94,17 @@ const ProgressReportPage = () => {
   // Efekt do ładowania raportu i zdjęć po zmianie daty
   useEffect(() => {
     if (userProject && userProject.id && reportDate && brigadeMembers.length > 0) {
+      // Resetujemy stany przed załadowaniem nowych danych dla wybranej daty
+      setReportData(null);
+      setReportStatus(null);
+      setIsEditingDraft(false);
+      setWorkEntries([]);
+      setSelectedEmployeeIds([]);
+      setImages([]);
+      setTempImages([]);
+      // Ważne: Resetujemy stan aktywności przy zmianie daty
+      setReportActivities([]);
+
       fetchReportForDate();
     }
   }, [reportDate, userProject, brigadeMembers]);
@@ -82,20 +112,14 @@ const ProgressReportPage = () => {
   // Efekt do ładowania zdjęć po załadowaniu raportu
   useEffect(() => {
     if (reportData && reportData.id) {
-      // Ustawienie flagi załadowanego raportu
-      const isLoadingNewReport = !loadingActivities;
-
       // Pobierz zdjęcia dla nowego raportu
       fetchReportImages(reportData.id);
 
-      // Pobierz aktywności tylko jeśli nie są aktualnie ładowane
-      // lub gdy nie mamy jeszcze żadnych aktywności
-      if (isLoadingNewReport || reportActivities.length === 0) {
-        fetchReportActivities(reportData.id);
-      }
+      // Pobierz aktywności dla tego raportu
+      fetchReportActivities(reportData.id);
     } else {
+      // Ważne: Jeśli nie ma raportu, wyczyść zdjęcia i aktywności
       setImages([]);
-      // Resetuj aktywności tylko jeśli nie ma raportu
       setReportActivities([]);
     }
   }, [reportData]);
@@ -298,11 +322,24 @@ const ProgressReportPage = () => {
       const data = await response.json();
       console.log(`Pobrano ${data.length} aktywności dla raportu ${reportId}`);
 
-      // Ważne: Aktualizujemy stan aktywności tylko jeśli otrzymaliśmy dane
-      // i tylko jeśli aktualny reportId jest taki sam jak przy wywołaniu funkcji
-      // (zapobiega to problemom gdy użytkownik zmieni datę podczas ładowania)
+      // Mapuj dane z API na format używany przez ActivitiesSelector
+      const mappedActivities = data.map(activity => ({
+        id: activity.id.toString(),
+        activity_type: activity.activity_type,
+        sub_activity: activity.sub_activity,
+        zona: activity.zona,
+        row: activity.row,
+        quantity: activity.quantity,
+        unit: activity.unit,
+        notes: activity.notes || ''
+      }));
+
+      // Ważne: Aktualizujemy stan aktywności tylko jeśli aktualne ID raportu jest takie samo
+      // jak ID, dla którego pobieraliśmy dane (zapobiega problemom gdy użytkownik zmieni datę podczas ładowania)
       if (reportData && reportData.id === reportId) {
-        setReportActivities(data);
+        setReportActivities(mappedActivities);
+      } else {
+        console.log("Raport się zmienił podczas pobierania aktywności - ignoruję wyniki");
       }
     } catch (err) {
       console.error('Błąd pobierania aktywności:', err);
@@ -314,6 +351,12 @@ const ProgressReportPage = () => {
 
   // Zmodyfikowana funkcja obsługi zmiany aktywności
   const handleActivitiesChange = (activities) => {
+    // Upewnij się, że aktualnie mamy raport - jeśli nie, nie aktualizuj stanu aktywności
+    if (!reportData) {
+      console.log("Brak raportu - ignoruję aktualizację aktywności");
+      return;
+    }
+
     // Upewnij się, że nie aktualizujemy stanu jeśli otrzymujemy pusty array,
     // a mamy już jakieś aktywności (zapobiega to "miganiu")
     if (activities.length === 0 && reportActivities.length > 0) {
@@ -330,7 +373,7 @@ const ProgressReportPage = () => {
     if (!userProject || !userProject.id || !reportDate) return;
 
     try {
-      const response = await fetch(`/api/progress-reports/?date=${reportDate}`, {
+      const response = await fetch(`/api/progress-reports-for-date/?date=${reportDate}`, {
         credentials: 'same-origin',
       });
 
@@ -340,12 +383,9 @@ const ProgressReportPage = () => {
 
       const data = await response.json();
 
-      // Filtruj raporty tylko dla wybranej daty
-      const reportsForDate = data.filter(report => report.date === reportDate);
-
       // Ustaw dane raportu jeśli istnieje, lub null jeśli nie ma raportu na tę datę
-      if (reportsForDate && reportsForDate.length > 0) {
-        const report = reportsForDate[0]; // Zakładamy, że dla danej daty jest tylko jeden raport
+      if (data && data.length > 0) {
+        const report = data[0]; // Zakładamy, że dla danej daty jest tylko jeden raport
         setReportData(report);
 
         // Określ status raportu (wersja robocza czy finalna)
@@ -376,18 +416,24 @@ const ProgressReportPage = () => {
           setSelectedEmployeeIds([]);
         }
       } else {
+        // Kluczowa zmiana: Jeśli nie ma raportu, wyraźnie ustawiamy wartości na null/puste
+        console.log("Nie znaleziono raportu dla daty", reportDate);
         setReportData(null);
         setReportStatus(null);
         setIsEditingDraft(false);
         setWorkEntries([]);
         setSelectedEmployeeIds([]);
+        setReportActivities([]);
       }
     } catch (err) {
       console.error('Error fetching report:', err);
+      // W przypadku błędu również wyraźnie resetujemy stan
       setReportData(null);
       setReportStatus(null);
+      setIsEditingDraft(false);
       setWorkEntries([]);
       setSelectedEmployeeIds([]);
+      setReportActivities([]);
     }
   };
 
@@ -693,18 +739,81 @@ const ProgressReportPage = () => {
     setShowImageModal(true);
   };
 
-  // Nowa funkcja: Zapisz jako wersję roboczą
-  const saveAsDraft = async () => {
+  // Funkcja pomocnicza do zapisywania aktywności raportu
+  const saveActivitiesForReport = async (reportId) => {
+      if (!reportId) {
+        console.log("Brak ID raportu - nie można zapisać aktywności");
+        return false;
+      }
+
+      if (reportActivities.length === 0) {
+        console.log("Brak aktywności do zapisania");
+        return true; // Nic do zapisania, ale to nie błąd
+      }
+
+      try {
+        console.log('Zapisuję aktywności:', reportActivities);
+        console.log('Do raportu o ID:', reportId);
+
+        // Przygotowanie danych do wysłania
+        const activitiesForAPI = reportActivities.map(activity => ({
+          activity_type: activity.activity_type,
+          sub_activity: activity.sub_activity,
+          zona: activity.zona,
+          row: activity.row,
+          quantity: parseInt(activity.quantity),
+          unit: activity.unit || '',
+          notes: activity.notes || ''
+        }));
+
+        const response = await fetch('/api/add-activities-to-report/', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken(),
+          },
+          credentials: 'same-origin',
+          body: JSON.stringify({
+            report_id: reportId,
+            activities: activitiesForAPI
+          }),
+        });
+
+        const data = await response.json();
+        console.log('Odpowiedź z serwera po zapisie aktywności:', data);
+
+        if (!response.ok) {
+          throw new Error(data.detail || 'Nie udało się zapisać aktywności');
+        }
+
+        showNotification("Aktywności zostały zapisane", "success");
+        return true;
+
+      } catch (err) {
+        console.error('Błąd zapisywania aktywności:', err);
+        showNotification("Wystąpił błąd podczas zapisywania aktywności", "error");
+        return false;
+      }
+    };
+
+   // Nowa funkcja: Zapisz jako wersję roboczą
+   const saveAsDraft = async () => {
     await saveReport(true);
-  };
+   };
 
-  // Nowa funkcja: Zapisz jako wersję finalną (dotychczasowy handleSubmit)
-  const submitFinalReport = async () => {
+   // Nowa funkcja: Zapisz jako wersję finalną
+   const submitFinalReport = async () => {
     await saveReport(false);
-  };
+   };
 
-  // Wspólna funkcja do zapisywania raportu
-  const saveReport = async (isDraft) => {
+   // Oryginalna funkcja handleSubmit - teraz wywołuje submitFinalReport
+   const handleSubmit = async (e) => {
+    if (e) e.preventDefault();
+    await submitFinalReport();
+   };
+
+   // Wspólna funkcja do zapisywania raportu
+   const saveReport = async (isDraft) => {
     // Sprawdź czy użytkownik ma przypisany projekt
     if (!userProject) {
       setError("Nie możesz złożyć raportu bez przypisanego projektu. Przejdź do sekcji 'Brygada' aby przypisać projekt.");
@@ -786,6 +895,11 @@ const ProgressReportPage = () => {
         await uploadTempImagesToReport(savedReport.id);
       }
 
+      // Zapisz aktywności do raportu (POPRAWKA - zapisuj aktywności dla nowego lub edytowanego raportu)
+      if (savedReport && savedReport.id && reportActivities.length > 0) {
+        await saveActivitiesForReport(savedReport.id);
+      }
+
       // Pokaż odpowiednie powiadomienie
       showNotification(isDraft ? "Wersja robocza została zapisana" : "Raport został pomyślnie zapisany", "success");
 
@@ -795,6 +909,8 @@ const ProgressReportPage = () => {
       // Załaduj zdjęcia dla nowego raportu
       if (savedReport && savedReport.id) {
         fetchReportImages(savedReport.id);
+        // Również zaktualizuj listę aktywności
+        fetchReportActivities(savedReport.id);
       }
 
     } catch (err) {
@@ -803,22 +919,10 @@ const ProgressReportPage = () => {
     } finally {
       setSubmitting(false);
     }
-  };
+   };
 
-  // Oryginalna funkcja handleSubmit - modyfikujemy, aby wywołać saveReport
-  const handleSubmit = async (e) => {
-    if (e) e.preventDefault();
-    await submitFinalReport();
-  };
-
-  // Funkcja do wyświetlania powiadomień
-  const showNotification = (message, type = 'info') => {
-    setNotification({ message, type });
-    setTimeout(() => setNotification(null), 3000);
-  };
-
-  // Funkcja do stylizacji dat w kalendarzu
-  const getDateStyle = (date) => {
+   // Funkcja do stylizacji dat w kalendarzu
+   const getDateStyle = (date) => {
     const formattedDate = date instanceof Date
       ? date.toISOString().split('T')[0]
       : date;
@@ -829,22 +933,10 @@ const ProgressReportPage = () => {
       return 'bg-orange-200';
     }
     return '';
-  };
+   };
 
-  // Czy formularz powinien być zablokowany
-  const isFormDisabled = reportStatus === 'submitted' || (reportStatus === 'draft' && !isEditingDraft);
-
-  // Helper function for work entries section title
-  const getWorkEntriesSectionTitle = () => {
-    if (workEntries.length === 0) {
-      return "Brak wybranych pracowników";
-    }
-    return `Raportowane godziny pracy (${workEntries.length} ${
-      workEntries.length === 1 ? 'pracownik' : workEntries.length < 5 ? 'pracownicy' : 'pracowników'
-    })`;
-  };
-
-  return (
+   // Renderowanie komponentu
+   return (
     <div>
       <div className="flex justify-between items-center mb-8">
         <h1 className="text-3xl font-bold text-gray-800">Progres Raport</h1>
@@ -1184,18 +1276,17 @@ const ProgressReportPage = () => {
           </div>
 
           {showActivitiesSection && (
-            <ActivitiesSelector
-              projectId={userProject.id}
-              reportId={reportData?.id}
-              isDisabled={reportStatus === 'submitted' || (reportStatus === 'draft' && !isEditingDraft)}
-              onActivitiesChange={handleActivitiesChange}
-              existingActivities={reportActivities}
-              onSaveComplete={(reportId) => {
-                // Używaj bezpośrednio funkcji fetchReportActivities
-                fetchReportActivities(reportId);
-              }}
-            />
-          )}
+              <ActivitiesSelector
+                projectId={userProject.id}
+                reportId={reportData?.id || null}
+                isDisabled={!reportData || reportStatus === 'submitted' || (reportStatus === 'draft' && !isEditingDraft)}
+                onActivitiesChange={handleActivitiesChange}
+                existingActivities={reportData ? reportActivities : []}  // Kluczowa zmiana: przekazuj puste aktywności gdy nie ma raportu
+                onSaveComplete={(reportId) => {
+                  fetchReportActivities(reportId);
+                }}
+              />
+            )}
         </div>
       )}
 
@@ -1283,7 +1374,7 @@ const ProgressReportPage = () => {
                 <p className="text-sm mt-2">Kliknij "Dodaj zdjęcie", aby dodać pierwsze zdjęcie</p>
               )}
             </div>
-          ) : (
+           ) : (
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
               {/* Wyświetl tymczasowe zdjęcia */}
               {tempImages.map(tempImage => (
@@ -1346,44 +1437,44 @@ const ProgressReportPage = () => {
                 </div>
               ))}
             </div>
-          )}
-        </div>
-      )}
+           )}
+                </div>
+              )}
 
-      {/* Modal do pokazywania zdjęć w pełnym rozmiarze */}
-      {showImageModal && selectedImage && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75 p-4">
-          <div className="relative max-w-4xl max-h-full bg-white rounded-lg shadow-xl overflow-hidden">
-            <button
-              onClick={() => setShowImageModal(false)}
-              className="absolute top-2 right-2 text-gray-600 hover:text-gray-900 bg-white rounded-full p-1"
-            >
-              <X size={24} />
-            </button>
+              {/* Modal do pokazywania zdjęć w pełnym rozmiarze */}
+              {showImageModal && selectedImage && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75 p-4">
+                  <div className="relative max-w-4xl max-h-full bg-white rounded-lg shadow-xl overflow-hidden">
+                    <button
+                      onClick={() => setShowImageModal(false)}
+                      className="absolute top-2 right-2 text-gray-600 hover:text-gray-900 bg-white rounded-full p-1"
+                    >
+                      <X size={24} />
+                    </button>
 
-            <div className="p-2">
-              <img
-                src={selectedImage.image_url || selectedImage.image}
-                alt={selectedImage.name}
-                className="max-h-[80vh] max-w-full object-contain"
-                onError={(e) => {
-                  e.target.onerror = null;
-                  e.target.src = "/api/placeholder/800/600";
-                }}
-              />
-            </div>
+                    <div className="p-2">
+                      <img
+                        src={selectedImage.image_url || selectedImage.image}
+                        alt={selectedImage.name}
+                        className="max-h-[80vh] max-w-full object-contain"
+                        onError={(e) => {
+                          e.target.onerror = null;
+                          e.target.src = "/api/placeholder/800/600";
+                        }}
+                      />
+                    </div>
 
-            <div className="p-4 bg-gray-100 border-t">
-              <p className="font-medium text-gray-800">{selectedImage.name}</p>
-              {selectedImage.description && (
-                <p className="text-gray-600 mt-1">{selectedImage.description}</p>
+                    <div className="p-4 bg-gray-100 border-t">
+                      <p className="font-medium text-gray-800">{selectedImage.name}</p>
+                      {selectedImage.description && (
+                        <p className="text-gray-600 mt-1">{selectedImage.description}</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
               )}
             </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
+          );
+        };
 
 export default ProgressReportPage;

@@ -32,6 +32,8 @@ const ActivitiesSelector = ({
   const [saving, setSaving] = useState(false);
   // Dodajemy nowy stan dla śledzenia inicjalizacji
   const [isInitialized, setIsInitialized] = useState(false);
+  // Dodajemy licznik aktywności, aby generować unikalne ID
+  const [activityCounter, setActivityCounter] = useState(1);
 
   // Poprawa: Używamy useCallback dla aktualizacji stanów, by uniknąć niepotrzebnych re-renderów
   const updateActivities = useCallback((newActivities) => {
@@ -43,13 +45,48 @@ const ActivitiesSelector = ({
 
   // Poprawa: Inicjalizacja aktywności z existingActivities tylko raz przy montowaniu lub zmianie reportId
   useEffect(() => {
-    // Tylko jeśli nie jest jeszcze zainicjalizowane lub zmienił się reportId
-    if (!isInitialized || existingActivities.length > 0) {
-      console.log("Inicjalizacja aktywności:", existingActivities);
-      updateActivities(existingActivities);
-      setIsInitialized(true);
-    }
-  }, [existingActivities, isInitialized, reportId, updateActivities]);
+      // Jeśli reportId jest null (brak raportu), resetuj aktywności
+      if (!reportId) {
+        console.log("Resetowanie aktywności (brak reportId)");
+        updateActivities([]);
+        setIsInitialized(true);
+        return;
+      }
+
+      // Sprawdź, czy otrzymaliśmy nowe existingActivities dla tego raportId
+      if (existingActivities.length > 0) {
+        console.log("Inicjalizacja aktywności z danych zewnętrznych:", existingActivities);
+
+        // Najpierw sprawdź, czy te aktywności nie są już załadowane
+        if (JSON.stringify(activities) !== JSON.stringify(existingActivities)) {
+          console.log("Aktualizuję aktywności, bo są różnice");
+          updateActivities(existingActivities);
+
+          // Aktualizuj licznik aktywności na podstawie istniejących aktywności
+          const maxId = existingActivities.reduce((max, activity) => {
+            // Jeśli aktywność ma id w formacie "activity_X", wyciągnij liczbę
+            if (activity.id && typeof activity.id === 'string' && activity.id.startsWith('activity_')) {
+              const idNum = parseInt(activity.id.split('_')[1], 10);
+              return isNaN(idNum) ? max : Math.max(max, idNum);
+            }
+            // Jeśli id jest liczbą, użyj jej bezpośrednio
+            else if (activity.id && !isNaN(parseInt(activity.id, 10))) {
+              return Math.max(max, parseInt(activity.id, 10));
+            }
+            return max;
+          }, 0);
+
+          // Ustaw licznik na największe ID + 1
+          setActivityCounter(maxId + 1);
+        }
+
+        setIsInitialized(true);
+      } else if (!isInitialized && reportId) {
+        // Jeśli nie mamy aktywności, ale mamy reportId, zainicjalizuj pustą listę
+        updateActivities([]);
+        setIsInitialized(true);
+      }
+    }, [existingActivities, reportId, activities, updateActivities, isInitialized]);
 
   // Pobranie konfiguracji aktywności dla projektu
   useEffect(() => {
@@ -286,9 +323,13 @@ const ActivitiesSelector = ({
       return;
     }
 
+    // Generuj unikalne ID dla nowej aktywności
+    const newActivityId = `activity_${activityCounter}`;
+    setActivityCounter(activityCounter + 1);
+
     // Dodaj nową aktywność
     const newActivity = {
-      id: `activity_${Date.now()}`,
+      id: newActivityId,
       activity_type: selectedMainActivity,
       sub_activity: selectedSubActivity,
       zona: selectedZona,
@@ -334,6 +375,17 @@ const ActivitiesSelector = ({
       console.log('Zapisuję aktywności:', activities);
       console.log('Do raportu o ID:', reportId);
 
+      // Przygotuj dane dla API - przekształć format aktywności
+      const activitiesForAPI = activities.map(activity => ({
+        activity_type: activity.activity_type,
+        sub_activity: activity.sub_activity,
+        zona: activity.zona,
+        row: activity.row,
+        quantity: activity.quantity,
+        unit: activity.unit || '',
+        notes: activity.notes || ''
+      }));
+
       const response = await fetch('/api/add-activities-to-report/', {
         method: 'POST',
         headers: {
@@ -343,16 +395,7 @@ const ActivitiesSelector = ({
         credentials: 'same-origin',
         body: JSON.stringify({
           report_id: reportId,
-          activities: activities.map(activity => ({
-            activity_type: activity.activity_type,
-            sub_activity: activity.sub_activity,
-            zona: activity.zona,
-            row: activity.row,
-            table: activity.table,
-            quantity: activity.quantity,
-            unit: activity.unit,
-            notes: activity.notes
-          }))
+          activities: activitiesForAPI
         }),
       });
 
@@ -521,6 +564,7 @@ const ActivitiesSelector = ({
     );
   };
 
+  // Renderowanie opcji dla stref
   const renderZonaOptions = () => {
     if (!activityConfig || !selectedMainActivity || !selectedSubActivity) return null;
 
@@ -713,8 +757,6 @@ const ActivitiesSelector = ({
       }
     } else if (selectedMainActivity === 'Konstrukcja') {
       // Podobna logika dla konstrukcji
-      } else if (selectedMainActivity === 'Konstrukcja') {
-      // Podobna logika dla konstrukcji
       if (activityConfig.konstrukcja) {
         Object.values(activityConfig.konstrukcja).forEach(items => {
           if (Array.isArray(items)) {
@@ -771,10 +813,10 @@ const ActivitiesSelector = ({
         ))}
       </select>
     );
-  };
+   };
 
-  // Renderowanie opcji dla numerów stołów
-  const renderTableOptions = () => {
+   // Renderowanie opcji dla numerów stołów
+   const renderTableOptions = () => {
     if (!activityConfig || !selectedMainActivity || !selectedSubActivity ||
         !selectedZona || !selectedRow || selectedMainActivity !== 'Moduły') {
       return null;
@@ -808,10 +850,10 @@ const ActivitiesSelector = ({
         ))}
       </select>
     );
-  };
+   };
 
-  // Renderowanie komponentu
-  return (
+   // Renderowanie komponentu
+   return (
     <div className="bg-white rounded-lg shadow-md p-6 mb-6">
       <div className="flex justify-between mb-4">
         <h3 className="text-lg font-semibold flex items-center">
@@ -1054,7 +1096,7 @@ const ActivitiesSelector = ({
         </>
       )}
     </div>
-  );
+   );
 };
 
 export default ActivitiesSelector;
